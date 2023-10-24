@@ -599,7 +599,7 @@ func GetCommittedValue(ctx context.Context, vr types.ValueReader, cv types.Value
 			return nil, err
 		}
 		if r == nil {
-			return nil, errors.New(fmt.Sprintf("DUSTIN: vr.ReadValue returned nil with no error: roothash: %s", roothash))
+			return nil, errors.New(fmt.Sprintf("DUSTIN: vr.ReadValue returned nil with no error: len(cmsg.RootBytes()): %d: roothash: %s", len(cmsg.RootBytes()), roothash))
 		}
 		return r, nil
 	} else {
