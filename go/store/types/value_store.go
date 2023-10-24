@@ -192,8 +192,6 @@ func (lvs *ValueStore) ReadValue(ctx context.Context, h hash.Hash) (Value, error
 		d.PanicIfTrue(v == nil)
 		nv := v.(Value)
 		return nv, nil
-	} else {
-		fmt.Fprintf(color.Output, "DUSTIN: lvs.ReadValue: not ok")
 	}
 
 	chunk, err := lvs.cs.Get(ctx, h)
@@ -202,7 +200,7 @@ func (lvs *ValueStore) ReadValue(ctx context.Context, h hash.Hash) (Value, error
 	}
 
 	if chunk.IsEmpty() {
-		fmt.Fprintf(color.Output, fmt.Sprintf("DUSTIN: lvs.ReadValue: chunk is empty: hash: %s", h.String()))
+		fmt.Fprintf(color.Output, fmt.Sprintf("DUSTIN: lvs.ReadValue: chunk is empty: hash: %s\n", h.String()))
 		fmt.Println("DUSTIN: lvs.ReadValue: chunk is empty: hash:", h.String())
 		return nil, nil
 	}
