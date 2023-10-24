@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/fatih/color"
 
 	flatbuffers "github.com/dolthub/flatbuffers/v23/go"
 
@@ -593,8 +594,18 @@ func GetCommittedValue(ctx context.Context, vr types.ValueReader, cv types.Value
 		}
 		var roothash hash.Hash
 		copy(roothash[:], cmsg.RootBytes())
-		return vr.ReadValue(ctx, roothash)
+		r, err := vr.ReadValue(ctx, roothash)
+		if err != nil {
+			return nil, err
+		}
+		if r == nil {
+			return nil, errors.New(fmt.Sprintf("DUSTIN: vr.ReadValue returned nil with no error: roothash: %s", roothash))
+		}
+		return r, nil
+	} else {
+		fmt.Fprintf(color.Output, "DUSTIN: GetCommittedValue: cv not types.SerialMessage")
 	}
+
 	c, ok := cv.(types.Struct)
 	if !ok {
 		return nil, errors.New("GetCommittedValue: provided value is not a commit.")
@@ -602,7 +613,8 @@ func GetCommittedValue(ctx context.Context, vr types.ValueReader, cv types.Value
 	if c.Name() != commitName {
 		return nil, errors.New("GetCommittedValue: provided value is not a commit.")
 	}
-	v, _, err := c.MaybeGet(valueField)
+	v, found, err := c.MaybeGet(valueField)
+	fmt.Fprintf(color.Output, "DUSTIN: GetCommittedValue: c.MaybeGet(value): found:", found)
 	return v, err
 }
 
