@@ -109,7 +109,7 @@ func BenchmarkDolt(ctx context.Context, config *Config, serverConfig *ServerConf
 		// we expect a kill error
 		// we only exit in error if this is not the
 		// error
-		if err.Error() != "signal: killed" {
+		if err.Error() != "signal: killed" && err.Error() != "exit status 1" {
 			fmt.Println(err)
 			close(quit)
 			wg.Wait()
