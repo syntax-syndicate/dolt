@@ -45,16 +45,19 @@ func BenchmarkDolt(ctx context.Context, config *Config, serverConfig *ServerConf
 
 	err := DoltVersion(ctx, serverConfig.ServerExec)
 	if err != nil {
+		fmt.Println("DUSTIN: dolt version error:", err.Error())
 		return nil, err
 	}
 
 	err = UpdateDoltConfig(ctx, serverConfig.ServerExec)
 	if err != nil {
+		fmt.Println("DUSTIN: update dolt config:", err.Error())
 		return nil, err
 	}
 
 	testRepo, err := initDoltRepo(ctx, serverConfig, config.NomsBinFormat)
 	if err != nil {
+		fmt.Println("DUSTIN: init dolt repo error:", err.Error())
 		return nil, err
 	}
 
@@ -95,6 +98,7 @@ func BenchmarkDolt(ctx context.Context, config *Config, serverConfig *ServerConf
 			if err != nil {
 				close(quit)
 				wg.Wait()
+				fmt.Println("DUSTIN: benchmark dolt error:", err.Error())
 				return nil, err
 			}
 			results = append(results, r)
@@ -113,6 +117,7 @@ func BenchmarkDolt(ctx context.Context, config *Config, serverConfig *ServerConf
 			fmt.Println(err)
 			close(quit)
 			wg.Wait()
+			fmt.Println("DUSTIN: dolt server wait error:", err.Error())
 			return nil, err
 		}
 	}

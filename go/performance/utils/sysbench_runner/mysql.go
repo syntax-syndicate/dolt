@@ -15,6 +15,7 @@
 package sysbench_runner
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -45,12 +46,17 @@ func BenchmarkMysql(ctx context.Context, config *Config, serverConfig *ServerCon
 	var gServer *errgroup.Group
 	var serverCtx context.Context
 	var server *exec.Cmd
+	var e bytes.Buffer
+	var o bytes.Buffer
 	if serverConfig.Host == defaultHost {
 		log.Println("Launching the default server")
 		localServer = true
 		gServer, serverCtx = errgroup.WithContext(withKeyCtx)
 		serverParams := serverConfig.GetServerArgs()
 		server = getMysqlServer(serverCtx, serverConfig, serverParams)
+
+		server.Stdout = &o
+		server.Stderr = &e
 
 		// launch the mysql server
 		gServer.Go(func() error {
@@ -93,6 +99,7 @@ func BenchmarkMysql(ctx context.Context, config *Config, serverConfig *ServerCon
 			if err != nil {
 				close(quit)
 				wg.Wait()
+				fmt.Println("DUSTIN: benchmark error:", err.Error())
 				return nil, err
 			}
 			results = append(results, r)
@@ -112,6 +119,9 @@ func BenchmarkMysql(ctx context.Context, config *Config, serverConfig *ServerCon
 			if err.Error() != "signal: killed" {
 				close(quit)
 				wg.Wait()
+				fmt.Println("DUSTIN: server wait error stdout:", o.String())
+				fmt.Println("DUSTIN: server wait error stderr:", e.String())
+				fmt.Println("DUSTIN: server wait error:", err.Error())
 				return nil, err
 			}
 		}
