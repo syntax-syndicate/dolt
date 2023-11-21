@@ -1726,6 +1726,71 @@ var MergeScripts = []queries.ScriptTest{
 		},
 	},
 	{
+		Name: "resolving a modified/modified still checks uniqueness constraint",
+		SetUpScript: []string{
+			"create table test(a int primary key, b int, c int);",
+			"insert into test values (1, 2, 3);",
+			"insert into test values (4, 5, 6);",
+			"call dolt_add('test');",
+			"call dolt_commit('-m', 'create test table');",
+
+			"call dolt_checkout('-b', 'other');",
+			"alter table test add unique (c)",
+			"update test set b = 5 where a = 1;",
+			"call dolt_add('test');",
+			"call dolt_commit('-m', 'update b');",
+
+			"call dolt_checkout('main');",
+			"alter table test add unique (b)",
+			"update test set c = 6 where a = 1;",
+			"call dolt_add('test');",
+			"call dolt_commit('-m', 'update c');",
+			"set dolt_force_transaction_commit = on;",
+		},
+		Assertions: []queries.ScriptTestAssertion{
+			{
+				Query:    "CALL DOLT_MERGE('other');",
+				Expected: []sql.Row{{"", 0, 0}},
+			},
+			{
+				Query:    "select a, b, c from dolt_constraint_violations_test;",
+				Expected: []sql.Row{{1, 5, 6}, {4, 5, 6}},
+			},
+		},
+	},
+	{
+		Name: "resolving a modified/modified row still checks nullness constraint",
+		SetUpScript: []string{
+			"create table test(a int primary key, b int, c int);",
+			"insert into test values (1, 2, 3);",
+			"call dolt_add('test');",
+			"call dolt_commit('-m', 'create test table');",
+
+			"call dolt_checkout('-b', 'other');",
+			"alter table test modify c int not null;",
+			"update test set b = NULL;",
+			"call dolt_add('test');",
+			"call dolt_commit('-m', 'drop column');",
+
+			"call dolt_checkout('main');",
+			"alter table test modify  b int not null",
+			"update test set c = NULL;",
+			"call dolt_add('test');",
+			"call dolt_commit('-m', 'remove row');",
+			"set dolt_force_transaction_commit = on;",
+		},
+		Assertions: []queries.ScriptTestAssertion{
+			{
+				Query:    "CALL DOLT_MERGE('other');",
+				Expected: []sql.Row{{"", 0, 0}},
+			},
+			{
+				Query:    "select a, b, c from dolt_constraint_violations_test;",
+				Expected: []sql.Row{{1, 5, 6}, {4, 5, 6}},
+			},
+		},
+	},
+	{
 		Name: "Pk convergent updates to sec diff congruent",
 		SetUpScript: []string{
 			"create table xyz (x int primary key, y int, z int, key y_idx(y), key z_idx(z))",
