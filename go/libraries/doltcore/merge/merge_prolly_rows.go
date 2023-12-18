@@ -1104,7 +1104,10 @@ func (m *primaryMerger) merge(ctx *sql.Context, diff tree.ThreeWayDiff, sourceSc
 	case tree.DiffOpRightDelete:
 		return m.mut.Put(ctx, diff.Key, diff.Right)
 	case tree.DiffOpDivergentDeleteResolved:
-		return m.mut.Delete(ctx, diff.Key)
+		if diff.Left != nil {
+			return m.mut.Delete(ctx, diff.Key)
+		}
+		return nil
 	case tree.DiffOpDivergentModifyResolved:
 		// any generated columns need to be re-resolved because their computed values may have changed as a result of
 		// the merge
