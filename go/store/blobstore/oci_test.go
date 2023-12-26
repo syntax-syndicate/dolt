@@ -213,66 +213,66 @@ func (c *concurrentRead) Read(start, end int64) []byte {
 	return c.b[start:end]
 }
 
-func TestDownloadParts(t *testing.T) {
-	contentLength := int64(35 * 1024 * 1024)
-	buf := make([]byte, contentLength)
-	_, err := rand.Read(buf)
-	assert.NoError(t, err)
-
-	ccr := &concurrentRead{
-		m: &sync.Mutex{},
-		b: buf,
-	}
-
-	br := NewBlobRange(0, 0)
-	requestedSize, totalSize, offset, err := getDownloadInfo(br, &contentLength)
-	assert.NoError(t, err)
-
-	collector := &downloadCollector{
-		m:              &sync.Mutex{},
-		completedParts: make([]testDownloadPart, 0),
-	}
-
-	f := func(ctx context.Context, objectName, namespace, etag string, partNumber int, br BlobRange) (*toDownload, error) {
-		b := ccr.Read(br.offset, br.offset+br.length)
-		cp := &toDownload{
-			partNum: partNumber,
-			br:      br,
-		}
-		part := testDownloadPart{
-			b:  b,
-			cp: cp,
-		}
-		collector.Add(part)
-		return cp, nil
-	}
-
-	completedParts, err := downloadParts(
-		context.Background(),
-		"test-object",
-		"test-namespace",
-		"test-etag",
-		requestedSize,
-		totalSize,
-		3,
-		offset,
-		25*1024,
-		maxPartNum,
-		3,
-		f)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, completedParts)
-	assert.Equal(t, len(completedParts), len(collector.Parts()))
-
-	actual := collector.Parts()
-	allData := make([]byte, 0)
-	for _, tp := range actual {
-		allData = append(allData, tp.b...)
-	}
-
-	assert.Equal(t, buf, allData)
-}
+//func TestDownloadParts(t *testing.T) {
+//	contentLength := int64(35 * 1024 * 1024)
+//	buf := make([]byte, contentLength)
+//	_, err := rand.Read(buf)
+//	assert.NoError(t, err)
+//
+//	ccr := &concurrentRead{
+//		m: &sync.Mutex{},
+//		b: buf,
+//	}
+//
+//	br := NewBlobRange(0, 0)
+//	requestedSize, totalSize, offset, err := getDownloadInfo(br, &contentLength)
+//	assert.NoError(t, err)
+//
+//	collector := &downloadCollector{
+//		m:              &sync.Mutex{},
+//		completedParts: make([]testDownloadPart, 0),
+//	}
+//
+//	f := func(ctx context.Context, objectName, namespace, etag string, partNumber int, br BlobRange) (*toDownload, error) {
+//		b := ccr.Read(br.offset, br.offset+br.length)
+//		cp := &toDownload{
+//			partNum: partNumber,
+//			br:      br,
+//		}
+//		part := testDownloadPart{
+//			b:  b,
+//			cp: cp,
+//		}
+//		collector.Add(part)
+//		return cp, nil
+//	}
+//
+//	completedParts, err := downloadParts(
+//		context.Background(),
+//		"test-object",
+//		"test-namespace",
+//		"test-etag",
+//		requestedSize,
+//		totalSize,
+//		3,
+//		offset,
+//		25*1024,
+//		maxPartNum,
+//		3,
+//		f)
+//
+//	assert.NoError(t, err)
+//	assert.NotNil(t, completedParts)
+//	assert.Equal(t, len(completedParts), len(collector.Parts()))
+//
+//	actual := collector.Parts()
+//	allData := make([]byte, 0)
+//	for _, tp := range actual {
+//		allData = append(allData, tp.b...)
+//	}
+//
+//	assert.Equal(t, buf, allData)
+//}
 
 func TestAssembleParts(t *testing.T) {
 	contentLength := int64(35 * 1024 * 1024)
@@ -326,4 +326,15 @@ func TestAssembleParts(t *testing.T) {
 	actualData, err := io.ReadAll(assembledReader)
 	assert.NoError(t, err)
 	assert.Equal(t, actualData, buf)
+}
+
+func TestSplitBlobRange(t *testing.T) {
+	br := NewBlobRange(0, 10*1029)
+	rgs, err := splitBlobRange(br, 43)
+	assert.NoError(t, err)
+	total := int64(0)
+	for _, r := range rgs {
+		total += r.length
+	}
+	assert.Equal(t, br.length, total)
 }

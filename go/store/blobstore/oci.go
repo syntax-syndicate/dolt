@@ -18,11 +18,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -50,7 +53,7 @@ type toDownload struct {
 
 type uploadFunc func(ctx context.Context, objectName, uploadID string, partNumber int, contentLength int64, reader io.Reader) (objectstorage.CommitMultipartUploadPartDetails, error)
 
-type downloadFunc func(ctx context.Context, objectName, namespace, etag string, partNumber int, br BlobRange) (*toDownload, error)
+type downloadFunc func(ctx context.Context, objectName, namespace, etag string, br BlobRange, w io.Writer) error
 
 type tempLocalObject struct {
 	path string
@@ -159,22 +162,20 @@ func (bs *OCIBlobstore) Get(ctx context.Context, key string, br BlobRange) (io.R
 		return nil, "", err
 	}
 
-	requestedSize, totalSize, offSet, err := getDownloadInfo(br, res.ContentLength)
-	if err != nil {
-		return nil, "", NotFound{"oci://" + path.Join(bs.bucketName, absKey)}
-	}
-
 	etag := fmtstr(res.ETag)
 
-	return bs.multipartDownload(ctx, absKey, namespace, etag, requestedSize, totalSize, offSet)
+	return bs.multipartDownload(ctx, absKey, namespace, etag, br, *res.ContentLength)
 }
 
-func (bs *OCIBlobstore) multipartDownload(ctx context.Context, absKey, namespace, etag string, requestedSize, totalSize, offSet int64) (io.ReadCloser, string, error) {
-	parts, err := downloadParts(ctx, absKey, namespace, etag, requestedSize, totalSize, defaultBatchSize, offSet, defaultPartSize, maxPartNum, defaultConcurrentListeners, bs.downloadPart)
+func (bs *OCIBlobstore) multipartDownload(ctx context.Context, absKey, namespace, etag string, br BlobRange, totalSize int64) (io.ReadCloser, string, error) {
+	filename, err := downloadParts(ctx, absKey, namespace, etag, br.positiveRange(totalSize), defaultBatchSize, defaultBatchSize, defaultPartSize, maxPartNum, defaultConcurrentListeners, bs.downloadPart)
 	if err != nil {
 		return nil, "", err
 	}
-	rc, err := assembleParts(parts)
+	rc, err := os.Open(filename)
+	if err != nil {
+		return nil, "", err
+	}
 	return rc, etag, err
 }
 
@@ -386,9 +387,9 @@ func (bs *OCIBlobstore) uploadPart(ctx context.Context, objectName, uploadID str
 	}, nil
 }
 
-func (bs *OCIBlobstore) downloadPart(ctx context.Context, objectName, namespace, etag string, partNumber int, br BlobRange) (*toDownload, error) {
+func (bs *OCIBlobstore) downloadPart(ctx context.Context, objectName, namespace, etag string, br BlobRange, w io.Writer) error {
 	if objectName == "" {
-		return nil, errors.New("object name required to upload part")
+		return errors.New("object name required to upload part")
 	}
 
 	req := objectstorage.GetObjectRequest{
@@ -411,31 +412,32 @@ func (bs *OCIBlobstore) downloadPart(ctx context.Context, objectName, namespace,
 
 	res, err := bs.client.GetObject(ctx, req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer res.Content.Close()
 
-	p, err := createTempFile()
-	if err != nil {
-		return nil, err
-	}
-
-	w, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, os.ModePerm)
-	if err != nil {
-		return nil, err
-	}
-	defer w.Close()
+	//p, err := createTempFile()
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//w, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, os.ModePerm)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//defer w.Close()
 
 	_, err = io.Copy(w, res.Content)
-	if err != nil {
-		return nil, err
-	}
+	return err
+	//if err != nil {
+	//	return nil, err
+	//}
 
-	return &toDownload{
-		path:    p,
-		partNum: partNumber,
-		br:      br,
-	}, nil
+	//return &toDownload{
+	//	path:    p,
+	//	partNum: partNumber,
+	//	br:      br,
+	//}, nil
 }
 
 func createTempFile() (string, error) {
@@ -501,106 +503,105 @@ func assembleParts(completedParts []*toDownload) (io.ReadCloser, error) {
 	}, nil
 }
 
-func downloadParts(ctx context.Context, objectName, namespace, etag string, requestedSize, totalSize, maxBatchSize, offSet, minPartSize, maxPartNum int64, concurrentListeners int, downloadF downloadFunc) ([]*toDownload, error) {
-	numParts, partSize := getNumPartsAndPartSize(requestedSize, minPartSize, maxPartNum)
-	completedPartChan := make(chan *toDownload, numParts)
-	completedParts := make([]*toDownload, numParts)
+func splitBlobRange(br BlobRange, size int64) ([]BlobRange, error) {
+	ranges := make([]BlobRange, 0)
+	if br.length < 1 {
+		return nil, fmt.Errorf("cannot split blob range with no length")
+	}
 
-	batch := make([]*toDownload, 0)
-	batchSize := int64(0)
-	partNum := 1
-	currentOffSet := offSet
+	if br.length < size {
+		return []BlobRange{br}, nil
+	}
 
-	for partNum <= numParts {
-		if batchSize >= maxBatchSize {
-			err := downloadBatch(ctx, objectName, namespace, etag, batch, completedPartChan, concurrentListeners, downloadF)
-			if err != nil {
-				close(completedPartChan)
-				return nil, err
-			}
-
-			batchSize = 0
-			batch = make([]*toDownload, 0)
-			continue
+	remaining := br.length
+	i := int64(0)
+	for remaining > 0 {
+		nextChunk := int64(math.Min(float64(size), float64(remaining)))
+		r := BlobRange{
+			offset: i,
+			length: nextChunk,
 		}
-
-		batch = append(batch, &toDownload{
-			partNum: partNum,
-			br:      NewBlobRange(currentOffSet, partSize),
-		})
-
-		batchSize += partSize
-		partNum++
-		currentOffSet = int64(math.Min(float64(partSize)+float64(currentOffSet), float64(totalSize)-float64(1)))
+		ranges = append(ranges, r)
+		remaining -= nextChunk
+		i += nextChunk
 	}
 
-	if batchSize > 0 && len(batch) > 0 {
-		err := downloadBatch(ctx, objectName, namespace, etag, batch, completedPartChan, concurrentListeners, downloadF)
-		if err != nil {
-			close(completedPartChan)
-			return nil, err
-		}
-	}
-
-	close(completedPartChan)
-
-	idx := 0
-	for cp := range completedPartChan {
-		completedParts[idx] = cp
-		idx++
-	}
-
-	sort.Slice(completedParts, func(i, j int) bool {
-		return completedParts[i].partNum < completedParts[j].partNum
-	})
-
-	return completedParts, nil
+	return ranges, nil
 }
 
-func downloadBatch(ctx context.Context, objectName, namespace, etag string, batch []*toDownload, completedPartsChan chan *toDownload, concurrentListeners int, downloadF downloadFunc) error {
-	batchChan := make(chan *toDownload, len(batch))
+func downloadParts(ctx context.Context, objectName, namespace, etag string, br BlobRange, totalSize, maxBatchSize, minPartSize, maxPartNum int64, concurrentListeners int, downloadF downloadFunc) (string, error) {
+	ranges, err := splitBlobRange(br, totalSize)
+	if err != nil {
+		return "", err
+	}
+
+	filename := filepath.Join(os.TempDir(), uuid.NewString())
+	f, err := os.Create(filename)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
 	eg, egCtx := errgroup.WithContext(ctx)
-
-	for i := 0; i < concurrentListeners; i++ {
+	for i := 0; i < len(ranges) && egCtx.Err() == nil; i++ {
+		batchedRange := ranges[i]
+		wr := io.NewOffsetWriter(f, batchedRange.offset)
 		eg.Go(func() error {
-			for {
-				select {
-				case <-egCtx.Done():
-					return nil
-				case d, ok := <-batchChan:
-					if !ok {
-						return nil
-					}
-
-					cp, err := downloadF(egCtx, objectName, namespace, etag, d.partNum, d.br)
-					if err != nil {
-						return err
-					}
-
-					completedPartsChan <- cp
-				}
-			}
+			return downloadF(egCtx, objectName, namespace, etag, batchedRange, wr)
 		})
 	}
+	err = eg.Wait()
+	if err != nil {
+		return "", err
+	}
 
-	eg.Go(func() error {
-		defer close(batchChan)
-
-		for {
-			select {
-			case <-egCtx.Done():
-				return nil
-			default:
-				for _, d := range batch {
-					batchChan <- d
-				}
-				return nil
-			}
-		}
-	})
-
-	return eg.Wait()
+	return filename, nil
 }
+
+//func downloadBatch(ctx context.Context, objectName, namespace, etag string, batch []*toDownload, completedPartsChan chan *toDownload, concurrentListeners int, downloadF downloadFunc) error {
+//	batchChan := make(chan *toDownload, len(batch))
+//	eg, egCtx := errgroup.WithContext(ctx)
+//
+//	for i := 0; i < concurrentListeners; i++ {
+//		eg.Go(func() error {
+//			for {
+//				select {
+//				case <-egCtx.Done():
+//					return nil
+//				case d, ok := <-batchChan:
+//					if !ok {
+//						return nil
+//					}
+//
+//					cp, err := downloadF(egCtx, objectName, namespace, etag, d.partNum, d.br)
+//					if err != nil {
+//						return err
+//					}
+//
+//					completedPartsChan <- cp
+//				}
+//			}
+//		})
+//	}
+//
+//	eg.Go(func() error {
+//		defer close(batchChan)
+//
+//		for {
+//			select {
+//			case <-egCtx.Done():
+//				return nil
+//			default:
+//				for _, d := range batch {
+//					batchChan <- d
+//				}
+//				return nil
+//			}
+//		}
+//	})
+//
+//	return eg.Wait()
+//}
 
 func uploadParts(ctx context.Context, objectName, uploadID string, numParts, concurrentListeners int, totalSize, maxBatchSize int64, reader io.Reader, uploadF uploadFunc) ([]objectstorage.CommitMultipartUploadPartDetails, error) {
 	completedPartChan := make(chan objectstorage.CommitMultipartUploadPartDetails, numParts)
