@@ -50,7 +50,7 @@ func (dt *TableOfTablesInConflict) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the log system table.
-func (dt *TableOfTablesInConflict) Schema() sql.Schema {
+func (dt *TableOfTablesInConflict) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "table", Type: types.Text, Source: doltdb.TableOfTablesInConflictName, PrimaryKey: true},
 		{Name: "num_conflicts", Type: types.Uint64, Source: doltdb.TableOfTablesInConflictName, PrimaryKey: false},

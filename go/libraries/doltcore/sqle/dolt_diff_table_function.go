@@ -72,7 +72,7 @@ func (dtf *DiffTableFunction) NewInstance(ctx *sql.Context, database sql.Databas
 }
 
 func (dtf *DiffTableFunction) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dtf.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dtf.Schema(ctx))
 	numRows, _, err := dtf.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -534,7 +534,7 @@ func (dtf *DiffTableFunction) cacheTableDelta(ctx *sql.Context, fromCommitVal, t
 }
 
 // Schema implements the sql.Node interface
-func (dtf *DiffTableFunction) Schema() sql.Schema {
+func (dtf *DiffTableFunction) Schema(_ *sql.Context) sql.Schema {
 	if !dtf.Resolved() {
 		return nil
 	}

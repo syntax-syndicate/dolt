@@ -57,8 +57,8 @@ func (idt *IndexedDoltTable) String() string {
 	return idt.table.String()
 }
 
-func (idt *IndexedDoltTable) Schema() sql.Schema {
-	return idt.table.Schema()
+func (idt *IndexedDoltTable) Schema(ctx *sql.Context) sql.Schema {
+	return idt.table.Schema(ctx)
 }
 
 func (idt *IndexedDoltTable) Collation() sql.CollationID {

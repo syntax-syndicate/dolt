@@ -51,7 +51,7 @@ func (i *IgnoreTable) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the dolt_ignore system table.
-func (i *IgnoreTable) Schema() sql.Schema {
+func (i *IgnoreTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "pattern", Type: sqlTypes.Text, Source: doltdb.IgnoreTableName, PrimaryKey: true},
 		{Name: "ignored", Type: sqlTypes.Boolean, Source: doltdb.IgnoreTableName, PrimaryKey: false, Nullable: false},

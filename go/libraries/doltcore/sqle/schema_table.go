@@ -77,7 +77,7 @@ func getOrCreateDoltSchemasTable(ctx *sql.Context, db Database) (retTbl *Writabl
 	if found {
 		schemasTable := tbl.(*WritableDoltTable)
 		// Old schemas table contains the `id` column or is missing an `extra` column.
-		if tbl.Schema().Contains(doltdb.SchemasTablesIdCol, doltdb.SchemasTableName) || !tbl.Schema().Contains(doltdb.SchemasTablesExtraCol, doltdb.SchemasTableName) {
+		if tbl.Schema(ctx).Contains(doltdb.SchemasTablesIdCol, doltdb.SchemasTableName) || !tbl.Schema(ctx).Contains(doltdb.SchemasTablesExtraCol, doltdb.SchemasTableName) {
 			return migrateOldSchemasTableToNew(ctx, db, schemasTable)
 		} else {
 			return schemasTable, nil

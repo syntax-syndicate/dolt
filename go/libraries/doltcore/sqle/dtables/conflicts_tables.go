@@ -97,7 +97,7 @@ func (ct ConflictsTable) String() string {
 }
 
 // Schema returns the sql.Schema of the table
-func (ct ConflictsTable) Schema() sql.Schema {
+func (ct ConflictsTable) Schema(_ *sql.Context) sql.Schema {
 	return ct.sqlSch.Schema
 }
 

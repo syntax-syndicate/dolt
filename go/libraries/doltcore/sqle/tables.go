@@ -348,7 +348,7 @@ func (t *DoltTable) Format() *types.NomsBinFormat {
 }
 
 // Schema returns the schema for this table.
-func (t *DoltTable) Schema() sql.Schema {
+func (t *DoltTable) Schema(_ *sql.Context) sql.Schema {
 	if t.projectedSchema != nil {
 		return t.projectedSchema
 	}
@@ -401,7 +401,7 @@ func (t *DoltTable) IsTemporary() bool {
 
 // DataLength implements the sql.StatisticsTable interface.
 func (t *DoltTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(t.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(t.Schema(ctx))
 	numRows, err := t.numRows(ctx)
 	if err != nil {
 		return 0, err
@@ -1163,7 +1163,7 @@ func (t *DoltTable) WithProjections(colNames []string) sql.Table {
 	nt.projectedCols = make([]uint64, 0)
 	nt.projectedSchema = make(sql.Schema, 0)
 	cols := t.sch.GetAllCols()
-	sch := t.Schema()
+	sch := t.Schema(nil) // TODO-CTX
 	for i := range colNames {
 		lowerName := strings.ToLower(colNames[i])
 		col, ok := cols.LowerNameToCol[lowerName]

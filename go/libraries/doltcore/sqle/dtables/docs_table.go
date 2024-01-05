@@ -58,7 +58,7 @@ func (dt *DocsTable) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the dolt_docs system table.
-func (dt *DocsTable) Schema() sql.Schema {
+func (dt *DocsTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: doltdb.DocPkColumnName, Type: sqlTypes.MustCreateString(sqltypes.VarChar, 16383, sql.Collation_Default), Source: doltdb.DocTableName, PrimaryKey: true, Nullable: false},
 		{Name: doltdb.DocTextColumnName, Type: sqlTypes.LongText, Source: doltdb.DocTableName, PrimaryKey: false},

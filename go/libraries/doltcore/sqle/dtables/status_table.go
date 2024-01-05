@@ -40,7 +40,7 @@ type StatusTable struct {
 var _ sql.StatisticsTable = (*StatusTable)(nil)
 
 func (s StatusTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(s.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(s.Schema(ctx))
 	numRows, _, err := s.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -60,7 +60,7 @@ func (s StatusTable) String() string {
 	return doltdb.StatusTableName
 }
 
-func (s StatusTable) Schema() sql.Schema {
+func (s StatusTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "table_name", Type: types.Text, Source: doltdb.StatusTableName, PrimaryKey: true, Nullable: false},
 		{Name: "staged", Type: types.Boolean, Source: doltdb.StatusTableName, PrimaryKey: true, Nullable: false},

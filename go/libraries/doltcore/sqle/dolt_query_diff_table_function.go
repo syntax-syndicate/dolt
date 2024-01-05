@@ -77,7 +77,7 @@ func (tf *QueryDiffTableFunction) WithCatalog(c sql.Catalog) (sql.TableFunction,
 }
 
 func (tf *QueryDiffTableFunction) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(tf.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(tf.Schema(ctx))
 	numRows, _, err := tf.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -311,7 +311,7 @@ func (tf *QueryDiffTableFunction) CheckPrivileges(ctx *sql.Context, opChecker sq
 }
 
 // Schema implements the sql.Node interface
-func (tf *QueryDiffTableFunction) Schema() sql.Schema {
+func (tf *QueryDiffTableFunction) Schema(_ *sql.Context) sql.Schema {
 	if !tf.Resolved() {
 		return nil
 	}

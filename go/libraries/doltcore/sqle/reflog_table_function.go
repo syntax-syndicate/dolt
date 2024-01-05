@@ -186,7 +186,7 @@ func (rltf *ReflogTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.Row
 	return sql.RowsToRowIter(rows...), nil
 }
 
-func (rltf *ReflogTableFunction) Schema() sql.Schema {
+func (rltf *ReflogTableFunction) Schema(_ *sql.Context) sql.Schema {
 	return reflogTableSchema
 }
 

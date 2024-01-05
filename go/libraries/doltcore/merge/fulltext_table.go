@@ -81,8 +81,8 @@ func (table *fulltextTable) String() string {
 }
 
 // Schema implements the interface fulltext.EditableTable.
-func (table *fulltextTable) Schema() sql.Schema {
-	return table.GMSTable.Schema()
+func (table *fulltextTable) Schema(ctx *sql.Context) sql.Schema {
+	return table.GMSTable.Schema(ctx)
 }
 
 // Collation implements the interface fulltext.EditableTable.

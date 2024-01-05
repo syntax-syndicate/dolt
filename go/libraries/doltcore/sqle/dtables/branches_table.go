@@ -54,7 +54,7 @@ func NewRemoteBranchesTable(_ *sql.Context, ddb dsess.SqlDatabase) sql.Table {
 }
 
 func (bt *BranchesTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(bt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(bt.Schema(ctx))
 	numRows, _, err := bt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -85,7 +85,7 @@ func (bt *BranchesTable) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the branches system table
-func (bt *BranchesTable) Schema() sql.Schema {
+func (bt *BranchesTable) Schema(_ *sql.Context) sql.Schema {
 	tableName := doltdb.BranchesTableName
 	if bt.remote {
 		tableName = doltdb.RemoteBranchesTableName

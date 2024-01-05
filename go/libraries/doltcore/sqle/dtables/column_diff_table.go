@@ -64,7 +64,7 @@ func (dt *ColumnDiffTable) Name() string {
 }
 
 func (dt *ColumnDiffTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -83,7 +83,7 @@ func (dt *ColumnDiffTable) String() string {
 }
 
 // Schema is a sql.Table interface function that returns the sql.Schema for this system table.
-func (dt *ColumnDiffTable) Schema() sql.Schema {
+func (dt *ColumnDiffTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "commit_hash", Type: types.Text, Source: doltdb.ColumnDiffTableName, PrimaryKey: true},
 		{Name: "table_name", Type: types.Text, Source: doltdb.ColumnDiffTableName, PrimaryKey: true},

@@ -127,7 +127,7 @@ func NewDiffTable(ctx *sql.Context, tblName string, ddb *doltdb.DoltDB, root *do
 }
 
 func (dt *DiffTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -147,7 +147,7 @@ func (dt *DiffTable) String() string {
 	return doltdb.DoltDiffTablePrefix + dt.name
 }
 
-func (dt *DiffTable) Schema() sql.Schema {
+func (dt *DiffTable) Schema(_ *sql.Context) sql.Schema {
 	return dt.sqlSch.Schema
 }
 

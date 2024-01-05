@@ -130,7 +130,7 @@ func (b BinlogTable) String() string {
 }
 
 // Schema implements the interface sql.Table.
-func (b BinlogTable) Schema() sql.Schema {
+func (b BinlogTable) Schema(_ *sql.Context) sql.Schema {
 	if b.IsAccess {
 		return accessBinlogSchema
 	} else {

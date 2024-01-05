@@ -92,7 +92,7 @@ func (tbl BranchNamespaceControlTable) String() string {
 }
 
 // Schema implements the interface sql.Table.
-func (tbl BranchNamespaceControlTable) Schema() sql.Schema {
+func (tbl BranchNamespaceControlTable) Schema(_ *sql.Context) sql.Schema {
 	return namespaceSchema
 }
 

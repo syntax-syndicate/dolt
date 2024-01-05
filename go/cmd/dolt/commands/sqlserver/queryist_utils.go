@@ -88,7 +88,7 @@ func (c ConnectionQueryist) Query(ctx *sql.Context, query string) (sql.Schema, s
 	if err != nil {
 		return nil, nil, err
 	}
-	return rowIter.Schema(), rowIter, nil
+	return rowIter.Schema(ctx), rowIter, nil
 }
 
 type MysqlRowWrapper struct {
@@ -126,7 +126,7 @@ func NewMysqlRowWrapper(rows *sql2.Rows) (*MysqlRowWrapper, error) {
 	}, nil
 }
 
-func (s *MysqlRowWrapper) Schema() sql.Schema {
+func (s *MysqlRowWrapper) Schema(_ *sql.Context) sql.Schema {
 	return s.schema
 }
 

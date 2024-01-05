@@ -92,7 +92,7 @@ func NewCommitDiffTable(ctx *sql.Context, tblName string, ddb *doltdb.DoltDB, ro
 }
 
 func (dt *CommitDiffTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -112,7 +112,7 @@ func (dt *CommitDiffTable) String() string {
 	return doltdb.DoltCommitDiffTablePrefix + dt.name
 }
 
-func (dt *CommitDiffTable) Schema() sql.Schema {
+func (dt *CommitDiffTable) Schema(_ *sql.Context) sql.Schema {
 	return dt.sqlSch.Schema
 }
 

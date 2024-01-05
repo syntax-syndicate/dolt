@@ -96,7 +96,7 @@ func (ct ProllyConflictsTable) String() string {
 	return doltdb.DoltConfTablePrefix + ct.tblName
 }
 
-func (ct ProllyConflictsTable) Schema() sql.Schema {
+func (ct ProllyConflictsTable) Schema(_ *sql.Context) sql.Schema {
 	return ct.sqlSch.Schema
 }
 

@@ -182,8 +182,8 @@ func NewHistoryTable(table *DoltTable, ddb *doltdb.DoltDB, head *doltdb.Commit) 
 
 // History table schema returns the corresponding history table schema for the base table given, which consists of
 // the table's schema with 3 additional columns
-func historyTableSchema(tableName string, table *DoltTable) sql.Schema {
-	baseSch := table.Schema().Copy()
+func historyTableSchema(ctx *sql.Context, tableName string, table *DoltTable) sql.Schema {
+	baseSch := table.Schema(ctx).Copy()
 	newSch := make(sql.Schema, len(baseSch), len(baseSch)+3)
 
 	for i, col := range baseSch {
@@ -375,8 +375,8 @@ func (ht *HistoryTable) String() string {
 }
 
 // Schema returns the schema for the history table
-func (ht *HistoryTable) Schema() sql.Schema {
-	sch := historyTableSchema(ht.Name(), ht.doltTable)
+func (ht *HistoryTable) Schema(ctx *sql.Context) sql.Schema {
+	sch := historyTableSchema(ctx, ht.Name(), ht.doltTable)
 	if ht.projectedCols == nil {
 		return sch
 	}
@@ -474,7 +474,7 @@ type historyIter struct {
 }
 
 func newRowItrForTableAtCommit(ctx *sql.Context, table *DoltTable, h hash.Hash, cm *doltdb.Commit, lookup sql.IndexLookup, projections []uint64) (*historyIter, error) {
-	targetSchema := table.Schema()
+	targetSchema := table.Schema(ctx)
 
 	root, err := cm.GetRootValue(ctx)
 	if err != nil {
@@ -532,7 +532,7 @@ func newRowItrForTableAtCommit(ctx *sql.Context, table *DoltTable, h hash.Hash, 
 		}
 	}
 
-	converter := rowConverter(lockedTable.Schema(), targetSchema, h, meta, projections)
+	converter := rowConverter(lockedTable.Schema(ctx), targetSchema, h, meta, projections)
 	return &historyIter{
 		table:           histTable,
 		tablePartitions: partIter,

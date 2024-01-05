@@ -80,7 +80,7 @@ func (ltf *LogTableFunction) Database() sql.Database {
 }
 
 func (ltf *LogTableFunction) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(ltf.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(ltf.Schema(ctx))
 	numRows, _, err := ltf.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -152,7 +152,7 @@ func (ltf *LogTableFunction) getOptionsString() string {
 }
 
 // Schema implements the sql.Node interface.
-func (ltf *LogTableFunction) Schema() sql.Schema {
+func (ltf *LogTableFunction) Schema(_ *sql.Context) sql.Schema {
 	logSchema := logTableSchema
 
 	if ltf.showParents {

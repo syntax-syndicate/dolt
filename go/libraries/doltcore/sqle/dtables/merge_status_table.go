@@ -42,7 +42,7 @@ func (s MergeStatusTable) String() string {
 	return doltdb.MergeStatusTableName
 }
 
-func (s MergeStatusTable) Schema() sql.Schema {
+func (s MergeStatusTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "is_merging", Type: types.Boolean, Source: doltdb.MergeStatusTableName, PrimaryKey: false, Nullable: false},
 		{Name: "source", Type: types.Text, Source: doltdb.MergeStatusTableName, PrimaryKey: false, Nullable: true},

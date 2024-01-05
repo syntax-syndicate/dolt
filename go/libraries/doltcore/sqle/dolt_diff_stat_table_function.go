@@ -78,7 +78,7 @@ func (ds *DiffStatTableFunction) NewInstance(ctx *sql.Context, db sql.Database, 
 }
 
 func (ds *DiffStatTableFunction) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(ds.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(ds.Schema(ctx))
 	numRows, _, err := ds.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -141,7 +141,7 @@ func (ds *DiffStatTableFunction) String() string {
 }
 
 // Schema implements the sql.Node interface.
-func (ds *DiffStatTableFunction) Schema() sql.Schema {
+func (ds *DiffStatTableFunction) Schema(_ *sql.Context) sql.Schema {
 	return diffStatTableSchema
 }
 

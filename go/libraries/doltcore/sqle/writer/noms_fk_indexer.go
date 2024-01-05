@@ -42,7 +42,7 @@ func (n *nomsFkIndexer) String() string {
 	return n.writer.tableName
 }
 
-func (n *nomsFkIndexer) Schema() sql.Schema {
+func (n *nomsFkIndexer) Schema(_ *sql.Context) sql.Schema {
 	return n.writer.sqlSch
 }
 

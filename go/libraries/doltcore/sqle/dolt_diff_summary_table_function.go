@@ -68,7 +68,7 @@ func (ds *DiffSummaryTableFunction) NewInstance(ctx *sql.Context, db sql.Databas
 }
 
 func (ds *DiffSummaryTableFunction) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(ds.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(ds.Schema(ctx))
 	numRows, _, err := ds.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -131,7 +131,7 @@ func (ds *DiffSummaryTableFunction) String() string {
 }
 
 // Schema implements the sql.Node interface.
-func (ds *DiffSummaryTableFunction) Schema() sql.Schema {
+func (ds *DiffSummaryTableFunction) Schema(_ *sql.Context) sql.Schema {
 	return diffSummaryTableSchema
 }
 

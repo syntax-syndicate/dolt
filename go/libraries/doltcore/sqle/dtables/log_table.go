@@ -51,7 +51,7 @@ func NewLogTable(_ *sql.Context, dbName string, ddb *doltdb.DoltDB, head *doltdb
 
 // DataLength implements sql.StatisticsTable
 func (dt *LogTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -86,7 +86,7 @@ func (dt *LogTable) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the log system table.
-func (dt *LogTable) Schema() sql.Schema {
+func (dt *LogTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "commit_hash", Type: types.Text, Source: doltdb.LogTableName, PrimaryKey: true},
 		{Name: "committer", Type: types.Text, Source: doltdb.LogTableName, PrimaryKey: false},

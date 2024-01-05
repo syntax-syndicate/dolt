@@ -86,7 +86,7 @@ func (cvt *constraintViolationsTable) String() string {
 }
 
 // Schema implements the interface sql.Table.
-func (cvt *constraintViolationsTable) Schema() sql.Schema {
+func (cvt *constraintViolationsTable) Schema(_ *sql.Context) sql.Schema {
 	return cvt.sqlSch.Schema
 }
 

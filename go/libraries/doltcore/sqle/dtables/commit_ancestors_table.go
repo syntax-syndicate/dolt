@@ -44,7 +44,7 @@ func NewCommitAncestorsTable(_ *sql.Context, dbName string, ddb *doltdb.DoltDB) 
 }
 
 func (dt *CommitAncestorsTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -67,7 +67,7 @@ func (dt *CommitAncestorsTable) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the commit_ancestors system table.
-func (dt *CommitAncestorsTable) Schema() sql.Schema {
+func (dt *CommitAncestorsTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "commit_hash", Type: types.Text, Source: doltdb.CommitAncestorsTableName, PrimaryKey: true},
 		{Name: "parent_hash", Type: types.Text, Source: doltdb.CommitAncestorsTableName, PrimaryKey: true},

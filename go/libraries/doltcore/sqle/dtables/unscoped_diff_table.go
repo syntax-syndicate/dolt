@@ -63,7 +63,7 @@ func NewUnscopedDiffTable(_ *sql.Context, dbName string, ddb *doltdb.DoltDB, hea
 }
 
 func (dt *UnscopedDiffTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -88,7 +88,7 @@ func (dt *UnscopedDiffTable) String() string {
 }
 
 // Schema is a sql.Table interface function that returns the sql.Schema for this system table.
-func (dt *UnscopedDiffTable) Schema() sql.Schema {
+func (dt *UnscopedDiffTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "commit_hash", Type: types.Text, Source: doltdb.DiffTableName, PrimaryKey: true},
 		{Name: "table_name", Type: types.Text, Source: doltdb.DiffTableName, PrimaryKey: true},

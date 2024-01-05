@@ -46,7 +46,7 @@ func NewCommitsTable(_ *sql.Context, dbName string, ddb *doltdb.DoltDB) sql.Tabl
 }
 
 func (dt *CommitsTable) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(dt.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(dt.Schema(ctx))
 	numRows, _, err := dt.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -69,7 +69,7 @@ func (dt *CommitsTable) String() string {
 }
 
 // Schema is a sql.Table interface function that gets the sql.Schema of the commits system table.
-func (dt *CommitsTable) Schema() sql.Schema {
+func (dt *CommitsTable) Schema(_ *sql.Context) sql.Schema {
 	return []*sql.Column{
 		{Name: "commit_hash", Type: types.Text, Source: doltdb.CommitsTableName, PrimaryKey: true},
 		{Name: "committer", Type: types.Text, Source: doltdb.CommitsTableName, PrimaryKey: false},

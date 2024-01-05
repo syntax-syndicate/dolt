@@ -77,7 +77,7 @@ type PatchTableFunction struct {
 }
 
 func (p *PatchTableFunction) DataLength(ctx *sql.Context) (uint64, error) {
-	numBytesPerRow := schema.SchemaAvgLength(p.Schema())
+	numBytesPerRow := schema.SchemaAvgLength(p.Schema(ctx))
 	numRows, _, err := p.RowCount(ctx)
 	if err != nil {
 		return 0, err
@@ -284,7 +284,7 @@ func (p *PatchTableFunction) String() string {
 }
 
 // Schema implements the sql.Node interface.
-func (p *PatchTableFunction) Schema() sql.Schema {
+func (p *PatchTableFunction) Schema(_ *sql.Context) sql.Schema {
 	return patchTableSchema
 }
 

@@ -102,7 +102,7 @@ func DoltProceduresGetOrCreateTable(ctx *sql.Context, db Database) (*WritableDol
 func migrateDoltProceduresSchema(ctx *sql.Context, db Database, oldTable *WritableDoltTable) (newTable *WritableDoltTable, rerr error) {
 	// Check whether the table needs to be migrated
 	targetSchema := ProceduresTableSqlSchema().Schema
-	if len(oldTable.Schema()) == len(targetSchema) {
+	if len(oldTable.Schema(ctx)) == len(targetSchema) {
 		return oldTable, nil
 	}
 

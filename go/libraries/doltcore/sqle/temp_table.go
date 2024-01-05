@@ -204,7 +204,7 @@ func (t *TempTable) Format() *types.NomsBinFormat {
 	return t.table.Format()
 }
 
-func (t *TempTable) Schema() sql.Schema {
+func (t *TempTable) Schema(_ *sql.Context) sql.Schema {
 	return t.pkSch.Schema
 }
 

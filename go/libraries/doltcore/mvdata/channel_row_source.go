@@ -50,7 +50,7 @@ func (c *ChannelRowSource) String() string {
 }
 
 // Schema implements the sql.Node interface.
-func (c *ChannelRowSource) Schema() sql.Schema {
+func (c *ChannelRowSource) Schema(_ *sql.Context) sql.Schema {
 	return c.schema
 }
 
