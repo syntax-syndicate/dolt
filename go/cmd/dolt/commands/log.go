@@ -110,6 +110,13 @@ func (cmd LogCmd) logWithLoggerFunc(ctx context.Context, commandStr string, args
 		defer closeFunc()
 	}
 
+	if apr.ContainsAll(cli.GraphFlag, cli.OneLineFlag) {
+		return handleErrAndExit(fmt.Errorf("oneline graph is not currently supported"))
+	}
+	if apr.ContainsAll(cli.GraphFlag, cli.StatFlag) {
+		return handleErrAndExit(fmt.Errorf("graph stat is not currently supported"))
+	}
+
 	query, err := constructInterpolatedDoltLogQuery(apr, queryist, sqlCtx)
 	if err != nil {
 		return handleErrAndExit(err)

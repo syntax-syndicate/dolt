@@ -587,7 +587,7 @@ func PrintCommitInfo(pager *outputpager.Pager, minParents int, showParents bool,
 	pager.Writer.Write([]byte(fmt.Sprintf("\nDate:  %s", timeStr)))
 
 	formattedDesc := "\n\n\t" + strings.Replace(comm.commitMeta.Description, "\n", "\n\t", -1) + "\n\n"
-	pager.Writer.Write([]byte(fmt.Sprintf("%s", formattedDesc)))
+	pager.Writer.Write([]byte(formattedDesc))
 
 }
 
