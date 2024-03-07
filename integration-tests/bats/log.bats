@@ -800,7 +800,7 @@ teardown() {
     l1=$(echo "${lines[1]}" | sed -E 's/\x1b\[[0-9;]*m//g') # remove special characters for color
     [[ "$l1" =~ " test | 1 +" ]] || false
     l2=$(echo "${lines[2]}" | sed -E 's/\x1b\[[0-9;]*m//g') # remove special characters for color
-    [[ "$output" =~ " 1 tables changed, 1 rows added(+), 0 rows modified(*), 0 rows deleted(-)" ]] || false
+    [[ "$l2" =~ " 1 tables changed, 1 rows added(+), 0 rows modified(*), 0 rows deleted(-)" ]] || false
     l3=$(echo "${lines[4]}" | sed -E 's/\x1b\[[0-9;]*m//g') # remove special characters for color
     [[ "$l3" =~ " test added" ]] || false
 }

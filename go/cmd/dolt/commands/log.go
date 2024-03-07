@@ -337,17 +337,27 @@ func logCompact(pager *outputpager.Pager, apr *argparser.ArgParseResults, commit
 }
 
 func logDefault(pager *outputpager.Pager, apr *argparser.ArgParseResults, commits []CommitInfo, sqlCtx *sql.Context, queryist cli.Queryist) error {
-	for _, comm := range commits {
-		PrintCommitInfo(pager, apr.GetIntOrDefault(cli.MinParentsFlag, 0), apr.Contains(cli.ParentsFlag), apr.GetValueOrDefault(cli.DecorateFlag, "auto"), &comm)
-		if apr.Contains(cli.StatFlag) {
-			if comm.parentHashes != nil && len(comm.parentHashes) == 1 { // don't print stats for merge commits
-				diffStats := make(map[string]*merge.MergeStats)
-				diffStats, _, err := calculateMergeStats(queryist, sqlCtx, diffStats, comm.parentHashes[0], comm.commitHash)
-				if err != nil {
-					return err
+	var edgeSet []CommitGraphEdge
+	sameParents := make(map[string]struct{})
+	for i, comm := range commits {
+		if apr.Contains(cli.GraphFlag) {
+			if i < len(commits)-1 {
+				edgeSet, sameParents = printCommitInfoWithGraph(edgeSet, sameParents, apr.GetIntOrDefault(cli.MinParentsFlag, 0), apr.Contains(cli.ParentsFlag), apr.GetValueOrDefault(cli.DecorateFlag, "auto"), &comm, &commits[i+1], pager)
+			} else {
+				edgeSet, sameParents = printCommitInfoWithGraph(edgeSet, sameParents, apr.GetIntOrDefault(cli.MinParentsFlag, 0), apr.Contains(cli.ParentsFlag), apr.GetValueOrDefault(cli.DecorateFlag, "auto"), &comm, nil, pager)
+			}
+		} else {
+			PrintCommitInfo(pager, apr.GetIntOrDefault(cli.MinParentsFlag, 0), apr.Contains(cli.ParentsFlag), apr.GetValueOrDefault(cli.DecorateFlag, "auto"), &comm)
+			if apr.Contains(cli.StatFlag) {
+				if comm.parentHashes != nil && len(comm.parentHashes) == 1 { // don't print stats for merge commits
+					diffStats := make(map[string]*merge.MergeStats)
+					diffStats, _, err := calculateMergeStats(queryist, sqlCtx, diffStats, comm.parentHashes[0], comm.commitHash)
+					if err != nil {
+						return err
+					}
+					printDiffStats(diffStats, pager)
+					pager.Writer.Write([]byte("\n"))
 				}
-				printDiffStats(diffStats, pager)
-				pager.Writer.Write([]byte("\n"))
 			}
 		}
 	}
@@ -466,6 +476,609 @@ func visualizeChangesForLog(stats *merge.MergeStats, maxMods int) string {
 	}
 
 	return resultStr
+}
+
+type CommitGraphEdge struct {
+	endHash string
+	color   string
+}
+
+type commitInfoForGraph struct {
+	commitHash    string
+	mergeInfo     string
+	authorInfo    string
+	dateInfo      string
+	commitMessage []string // each element is a new line
+}
+
+// printCommitInfoWithGraph prints the commit info with a text-based graphical representation of the commit history on
+// the left hand side of the output to a pager
+func printCommitInfoWithGraph(lastEdgeSet []CommitGraphEdge, sameParents map[string]struct{}, minParents int, showParents bool, decoration string, comm, nextComm *CommitInfo, pager *outputpager.Pager) ([]CommitGraphEdge, map[string]struct{}) {
+	if len(comm.parentHashes) < minParents {
+		return lastEdgeSet, sameParents
+	}
+
+	isMergeCommit := len(comm.parentHashes) > 1
+	output := constructCommitInfoForGraph(showParents, decoration, comm, isMergeCommit)
+
+	// update edge set
+	nodePos := 0 // column which should have the * for the current commit
+	for i, edge := range lastEdgeSet {
+		if edge.endHash == comm.commitHash {
+			nodePos = i
+			break
+		}
+	}
+
+	isDuplicate := false
+	curEdgeSet := make([]CommitGraphEdge, 0)
+	endEdgeSet := make([]CommitGraphEdge, 0)
+	if len(lastEdgeSet) == 0 {
+		for _, h := range comm.parentHashes {
+			curEdgeSet = append(curEdgeSet, CommitGraphEdge{endHash: h})
+		}
+	} else {
+		// remove hash of edge that ends, add new parents at that index
+		curEdgeSet = append(curEdgeSet, lastEdgeSet[:nodePos]...)
+		for _, h := range comm.parentHashes {
+			curEdgeSet = append(curEdgeSet, CommitGraphEdge{endHash: h})
+		}
+		curEdgeSet = append(curEdgeSet, lastEdgeSet[nodePos+1:]...)
+
+		for _, h := range comm.parentHashes {
+			for _, edge := range lastEdgeSet {
+				if h == edge.endHash {
+					sameParents[h] = struct{}{}
+					isDuplicate = true
+					break
+				}
+			}
+		}
+	}
+
+	// create and draw graph
+	var graph [][]string
+	if len(curEdgeSet) == 0 { // init commit
+		graph = [][]string{{"*", " "},
+			{"|", " "},
+			{"|", " "},
+			{"|", " "},
+			{"|", " "},
+			{"|", " "},
+			{"|", " "}}
+	} else {
+		numRows := 4 + len(output.commitMessage) // commit, merge, author, date, message
+		numColumns := len(curEdgeSet) * 2
+		graph = make([][]string, numRows)
+		for i := range graph {
+			graph[i] = make([]string, numColumns)
+		}
+
+		startCol := 0
+		outerCol := (nodePos * 2) + 1 // outermost col of the graph
+
+		for i, edge := range curEdgeSet {
+			if i < nodePos {
+				if _, ok := sameParents[edge.endHash]; ok && nextComm.commitHash == edge.endHash {
+					endCol := 0
+					for j, e := range curEdgeSet {
+						if e.endHash == nextComm.commitHash {
+							endCol = j * 2
+							break
+						}
+					}
+
+					if endCol == startCol {
+						for row := range graph {
+							graph[row][startCol] = "|"
+							graph[row][startCol+1] = " "
+						}
+						endEdgeSet = append(endEdgeSet, edge)
+					} else {
+						graph[0][startCol] = "|"
+						graph[0][startCol+1] = " "
+
+						startRow := 2
+						if isMergeCommit {
+							startRow = 1
+						}
+						curCol := startCol - 1
+						for row := startRow; curCol > endCol; row++ {
+							if row >= len(graph) {
+								graph = append(graph, make([]string, numColumns))
+								for col := 0; col < numColumns; col += 2 {
+									if (graph[row-1][col] != "" && graph[row-1][col] != " ") || (graph[row-1][col+1] != "" && graph[row-1][col+1] != " ") {
+										graph[row][col] = "|"
+									} else {
+										graph[row][col] = " "
+									}
+									graph[row][col+1] = " "
+								}
+							}
+							graph[row][curCol] = "/"
+							if graph[row][curCol+1] == "" {
+								graph[row][curCol+1] = " "
+							}
+							curCol -= 2
+						}
+
+						// remove from sameParents if no more duplicates
+						seenHash := false
+						for ind := i + 1; ind < len(curEdgeSet); ind++ {
+							if curEdgeSet[ind].endHash == edge.endHash {
+								seenHash = true
+								break
+							}
+						}
+						if !seenHash {
+							delete(sameParents, edge.endHash)
+						}
+					}
+				} else {
+					for row := range graph {
+						graph[row][startCol] = "|"
+						graph[row][startCol+1] = " "
+					}
+					endEdgeSet = append(endEdgeSet, edge)
+				}
+				startCol += 2
+			} else if i == nodePos {
+				if isMergeCommit {
+					// match shape
+					curCol := startCol
+					for row := 1; row < len(graph); row++ {
+						if curCol != 0 && graph[row][curCol-1] == "\\" && graph[row][curCol] == " " {
+							if _, ok := sameParents[edge.endHash]; ok && graph[row][curCol-2] == "|" {
+								graph[row][curCol] = "|"
+								graph[row][curCol+1] = " "
+							} else {
+								graph[row][curCol+1] = "\\"
+								graph[row][curCol+2] = " "
+								if curCol+1 > outerCol {
+									outerCol = curCol + 1
+								}
+								curCol += 2
+							}
+						} else if curCol > 3 && graph[row][curCol-3] == "/" && graph[row][curCol-2] == " " {
+							graph[row][curCol-1] = "/"
+							graph[row][curCol] = " "
+							curCol -= 2
+						} else {
+							graph[row][curCol] = "|"
+							if graph[row][curCol+1] == "" {
+								graph[row][curCol+1] = " "
+							}
+							if curCol+1 > outerCol {
+								outerCol = curCol + 1
+							}
+						}
+					}
+					if startCol+1 > outerCol {
+						outerCol = startCol + 1
+					}
+					endEdgeSet = append(endEdgeSet, edge)
+				} else {
+					if isDuplicate {
+						endCol := 0
+						for j, e := range curEdgeSet {
+							if e.endHash == comm.parentHashes[0] {
+								endCol = j * 2
+								break
+							}
+						}
+
+						if endCol == startCol {
+							// match shape
+							curCol := startCol
+							for row := 1; row < len(graph); row++ {
+								if curCol != 0 && graph[row][curCol-1] == "\\" && graph[row][curCol] == " " {
+									if _, ok := sameParents[edge.endHash]; ok && graph[row][curCol-2] == "|" {
+										graph[row][curCol] = "|"
+										graph[row][curCol+1] = " "
+									} else {
+										graph[row][curCol+1] = "\\"
+										graph[row][curCol+2] = " "
+										if curCol+1 > outerCol {
+											outerCol = curCol + 1
+										}
+										curCol += 2
+									}
+								} else if curCol > 3 && graph[row][curCol-3] == "/" && graph[row][curCol-2] == " " {
+									graph[row][curCol-1] = "/"
+									graph[row][curCol] = " "
+									curCol -= 2
+								} else {
+									graph[row][curCol] = "|"
+									if graph[row][curCol+1] == "" {
+										graph[row][curCol+1] = " "
+									}
+									if curCol+1 > outerCol {
+										outerCol = curCol + 1
+									}
+								}
+							}
+							if startCol+1 > outerCol {
+								outerCol = startCol + 1
+							}
+							endEdgeSet = append(endEdgeSet, edge)
+						} else {
+							curCol := startCol - 1
+							for row := 2; curCol > endCol; row++ {
+								if row >= len(graph) {
+									graph = append(graph, make([]string, numColumns))
+									for col := 0; col < numColumns; col += 2 {
+										if graph[row-1][col] == "|" || graph[row-1][col] == "/" || graph[row-1][col] == "\\" || graph[row-1][col+1] == "|" || graph[row-1][col+1] == "/" || graph[row-1][col+1] == "\\" {
+											graph[row][col] = "|"
+										} else {
+											graph[row][col] = " "
+										}
+										graph[row][col+1] = " "
+									}
+								}
+								graph[row][curCol] = "/"
+								if graph[row][curCol+1] == "" {
+									graph[row][curCol+1] = " "
+								}
+								curCol -= 2
+							}
+
+							// remove from sameParents if no more duplicates
+							seenHash := 0
+							for _, e := range curEdgeSet {
+								if e.endHash == edge.endHash {
+									seenHash++
+								}
+							}
+							if seenHash <= 2 {
+								delete(sameParents, edge.endHash)
+							}
+						}
+						startCol += 2
+					} else {
+						// match shape
+						curCol := startCol
+						for row := 1; row < len(graph); row++ {
+							if curCol != 0 && graph[row][curCol-1] == "\\" && graph[row][curCol] == " " {
+								if _, ok := sameParents[edge.endHash]; ok && graph[row][curCol-2] == "|" {
+									graph[row][curCol] = "|"
+									graph[row][curCol+1] = " "
+								} else {
+									graph[row][curCol+1] = "\\"
+									graph[row][curCol+2] = " "
+									if curCol+1 > outerCol {
+										outerCol = curCol + 1
+									}
+									curCol += 2
+								}
+							} else if curCol > 3 && graph[row][curCol-3] == "/" && graph[row][curCol-2] == " " {
+								graph[row][curCol-1] = "/"
+								graph[row][curCol] = " "
+								curCol -= 2
+							} else {
+								graph[row][curCol] = "|"
+								if graph[row][curCol+1] == "" {
+									graph[row][curCol+1] = " "
+								}
+								if curCol+1 > outerCol {
+									outerCol = curCol + 1
+								}
+							}
+						}
+						if startCol+1 > outerCol {
+							outerCol = startCol + 1
+						}
+						endEdgeSet = append(endEdgeSet, edge)
+						startCol += 2
+					}
+				}
+			} else if isMergeCommit && i == nodePos+1 {
+				curCol := startCol
+
+				if startCol != 0 && graph[1][startCol-1] == "/" {
+					graph[1][startCol] = "|"
+					graph[1][startCol+1] = " "
+				} else {
+					graph[1][startCol+1] = "\\"
+					graph[1][startCol+2] = " "
+					curCol += 2
+				}
+
+				// match shape
+				for row := 2; row < len(graph); row++ {
+					if curCol != 0 && graph[row][curCol-1] == "\\" && graph[row][curCol] == " " {
+						if _, ok := sameParents[edge.endHash]; ok && graph[row][curCol-2] == "|" {
+							graph[row][curCol] = "|"
+							graph[row][curCol+1] = " "
+						} else {
+							graph[row][curCol+1] = "\\"
+							graph[row][curCol+2] = " "
+							if curCol+1 > outerCol {
+								outerCol = curCol + 1
+							}
+							curCol += 2
+						}
+					} else if curCol > 3 && graph[row][curCol-3] == "/" && graph[row][curCol-2] == " " {
+						graph[row][curCol-1] = "/"
+						graph[row][curCol] = " "
+						curCol -= 2
+					} else {
+						graph[row][curCol] = "|"
+						if graph[row][curCol+1] == "" {
+							graph[row][curCol+1] = " "
+						}
+						if curCol+1 > outerCol {
+							outerCol = curCol + 1
+						}
+					}
+				}
+				if startCol+1 > outerCol {
+					outerCol = startCol + 1
+				}
+				endEdgeSet = append(endEdgeSet, edge)
+				startCol += 2
+			} else if _, ok := sameParents[edge.endHash]; ok {
+				endCol := 0
+				endHash := edge.endHash
+				if nextComm.commitHash == edge.endHash {
+					endHash = nextComm.commitHash
+				}
+				for j, e := range curEdgeSet {
+					if e.endHash == endHash {
+						endCol = j * 2
+						break
+					}
+				}
+
+				if endCol == startCol {
+					for row := range graph {
+						graph[row][startCol] = "|"
+						graph[row][startCol+1] = " "
+					}
+					if !isMergeCommit {
+						endEdgeSet = append(endEdgeSet, edge)
+					}
+				} else if endCol < startCol {
+					graph[0][startCol] = "|"
+					graph[0][startCol+1] = " "
+
+					curCol := startCol - 1
+					startRow := 2
+					if isMergeCommit {
+						startRow = 1
+					}
+					for row := startRow; curCol > endCol; row++ {
+						if row >= len(graph) {
+							graph = append(graph, make([]string, numColumns))
+							for col := 0; col < numColumns; col += 2 {
+								if graph[row-1][col] == "|" || graph[row-1][col] == "/" || graph[row-1][col] == "\\" || graph[row-1][col+1] == "|" || graph[row-1][col+1] == "/" || graph[row-1][col+1] == "\\" {
+									graph[row][col] = "|"
+								} else {
+									graph[row][col] = " "
+								}
+								graph[row][col+1] = " "
+							}
+						}
+						graph[row][curCol] = "/"
+						if graph[row][curCol+1] == "" {
+							graph[row][curCol+1] = " "
+						}
+						curCol -= 2
+					}
+					// remove from sameParents if no more duplicates
+					seenHash := 0
+					for _, e := range curEdgeSet {
+						if e.endHash == edge.endHash {
+							seenHash++
+						}
+					}
+					if seenHash <= 2 {
+						delete(sameParents, edge.endHash)
+					}
+					if startCol+1 > outerCol {
+						outerCol = startCol + 1
+					}
+				} else {
+					graph[0][startCol] = "|"
+					graph[0][startCol+1] = " "
+
+					curCol := startCol
+					startRow := 2
+					if isMergeCommit {
+						startRow = 1
+					}
+					for row := startRow; row < len(graph); row++ {
+						if curCol != 0 && graph[row][curCol-1] == "\\" && graph[row][curCol] == " " {
+							if _, ok := sameParents[edge.endHash]; ok && graph[row][curCol-2] == "|" {
+								graph[row][curCol] = "|"
+								graph[row][curCol+1] = " "
+							} else {
+								graph[row][curCol+1] = "\\"
+								graph[row][curCol+2] = " "
+								if curCol+1 > outerCol {
+									outerCol = curCol + 1
+								}
+								curCol += 2
+							}
+						} else if curCol > 3 && graph[row][curCol-3] == "/" && graph[row][curCol-2] == " " {
+							graph[row][curCol-1] = "/"
+							graph[row][curCol] = " "
+							curCol -= 2
+						} else {
+							graph[row][curCol] = "|"
+							if graph[row][curCol+1] == "" {
+								graph[row][curCol+1] = " "
+							}
+							if curCol+1 > outerCol {
+								outerCol = curCol + 1
+							}
+						}
+					}
+					if startCol+1 > outerCol {
+						outerCol = startCol + 1
+					}
+					endEdgeSet = append(endEdgeSet, edge)
+				}
+
+				startCol += 2
+			} else { // match shape of graph on the left
+				graph[0][startCol] = "|"
+				graph[0][startCol+1] = " "
+
+				curCol := startCol
+				startRow := 2
+				if isMergeCommit {
+					startRow = 1
+				}
+				for row := startRow; row < len(graph); row++ {
+					if curCol != 0 && graph[row][curCol-1] == "\\" && graph[row][curCol] == " " {
+						if _, ok := sameParents[edge.endHash]; ok && graph[row][curCol-2] == "|" {
+							graph[row][curCol] = "|"
+							graph[row][curCol+1] = " "
+						} else {
+							graph[row][curCol+1] = "\\"
+							graph[row][curCol+2] = " "
+							if curCol+1 > outerCol {
+								outerCol = curCol + 1
+							}
+							curCol += 2
+						}
+					} else if curCol > 3 && graph[row][curCol-3] == "/" && graph[row][curCol-2] == " " {
+						graph[row][curCol-1] = "/"
+						graph[row][curCol] = " "
+						curCol -= 2
+					} else {
+						graph[row][curCol] = "|"
+						if graph[row][curCol+1] == "" {
+							graph[row][curCol+1] = " "
+						}
+						if curCol+1 > outerCol {
+							outerCol = curCol + 1
+						}
+					}
+				}
+				if startCol+1 > outerCol {
+					outerCol = startCol + 1
+				}
+				endEdgeSet = append(endEdgeSet, edge)
+				startCol += 2
+			}
+		}
+
+		// fill in the rest of the graph with spaces
+		for row := range graph {
+			for col := outerCol; col >= 0 && graph[row][col] == ""; col-- {
+				graph[row][col] = " "
+			}
+		}
+
+		graph[0][nodePos*2] = "*"
+		graph[0][(nodePos*2)+1] = " "
+	}
+
+	// append graph to output components
+	output.commitHash = strings.Join(graph[0], "") + output.commitHash
+	if output.mergeInfo != "" {
+		output.mergeInfo = strings.Join(graph[1], "") + output.mergeInfo
+	}
+	output.authorInfo = strings.Join(graph[2], "") + output.authorInfo
+	output.dateInfo = strings.Join(graph[3], "") + output.dateInfo
+	for row := 4; row < len(graph); row++ {
+		if row-4 >= len(output.commitMessage) {
+			output.commitMessage = append(output.commitMessage, strings.Join(graph[row], ""))
+		} else {
+			output.commitMessage[row-4] = strings.Join(graph[row], "") + output.commitMessage[row-4]
+		}
+	}
+	output.commitMessage = append(output.commitMessage, "")
+	fullCommitInfo := strings.Join([]string{output.commitHash, output.mergeInfo, output.authorInfo, output.dateInfo, strings.Join(output.commitMessage, "\n")}, "")
+	pager.Writer.Write([]byte(fullCommitInfo))
+
+	return endEdgeSet, sameParents
+}
+
+// constructRefs assembles the appropriate refs associated with the given commit in the formatting used by log and show.
+// note: this should do the same as printRefs but returns a string instead of writing to a pager
+func constructRefs(comm *CommitInfo, decoration string) string {
+	// Do nothing if no associate branchNames
+	if len(comm.localBranchNames) == 0 && len(comm.remoteBranchNames) == 0 && len(comm.tagNames) == 0 {
+		return ""
+	}
+
+	references := []string{}
+	resultRefs := ""
+
+	for _, b := range comm.localBranchNames {
+		if decoration == "full" {
+			b = "refs/heads/" + b
+		}
+		// branch names are bright green (32;1m)
+		branchName := fmt.Sprintf("\033[32;1m%s\033[0m", b)
+		references = append(references, branchName)
+	}
+	for _, b := range comm.remoteBranchNames {
+		if decoration == "full" {
+			b = "refs/remotes/" + b
+		}
+		// remote names are bright red (31;1m)
+		branchName := fmt.Sprintf("\033[31;1m%s\033[0m", b)
+		references = append(references, branchName)
+	}
+	for _, t := range comm.tagNames {
+		if decoration == "full" {
+			t = "refs/tags/" + t
+		}
+		// tag names are bright yellow (33;1m)
+		tagName := fmt.Sprintf("\033[33;1mtag: %s\033[0m", t)
+		references = append(references, tagName)
+	}
+
+	resultRefs += "\033[33m(\033[0m"
+	if comm.isHead {
+		resultRefs += "\033[36;1mHEAD -> \033[0m"
+	}
+	resultRefs += strings.Join(references, "\033[33m, \033[0m") // Separate with Dim Yellow comma
+	resultRefs += "\033[33m) \033[0m"
+
+	return resultRefs
+}
+
+// constructCommitInfoForGraph assembles the commit info for a commit into the struct used to construct a graph.
+func constructCommitInfoForGraph(showParents bool, decoration string, comm *CommitInfo, isMergeCommit bool) commitInfoForGraph {
+	var output commitInfoForGraph
+
+	chStr := comm.commitHash
+	if showParents {
+		chStr = strings.Join(append([]string{chStr}, comm.parentHashes...), " ")
+	}
+	commStr := fmt.Sprintf("\033[33mcommit %s \033[0m", chStr) // Use Dim Yellow (33m)
+	if decoration != "no" {
+		commStr = commStr + constructRefs(comm, decoration)
+	}
+	commStr += "\n"
+	output.commitHash = commStr
+
+	mergeStr := ""
+	if isMergeCommit {
+		mergeStr += "Merge:"
+		for _, h := range comm.parentHashes {
+			mergeStr += " " + h
+		}
+		mergeStr += "\n"
+	}
+	output.mergeInfo = mergeStr
+
+	output.authorInfo = fmt.Sprintf("Author: %s <%s>\n", comm.commitMeta.Name, comm.commitMeta.Email)
+	output.dateInfo = fmt.Sprintf("Date: %s\n", comm.commitMeta.FormatTS())
+
+	splitDesc := strings.Split(comm.commitMeta.Description, "\n")
+	for i, line := range splitDesc {
+		splitDesc[i] = "\t" + line
+	}
+	output.commitMessage = []string{""}
+	output.commitMessage = append(output.commitMessage, splitDesc...)
+	output.commitMessage = append(output.commitMessage, "")
+
+	return output
 }
 
 func handleErrAndExit(err error) int {
