@@ -326,7 +326,7 @@ func (td TupleDesc) GetFloat64(i int, tup Tuple) (v float64, ok bool) {
 	td.expectEncoding(i, Float64Enc)
 	b := td.GetField(i, tup)
 	if b != nil {
-		v, ok = readFloat64(b), true
+		v, ok = ReadFloat64(b), true
 	}
 	return
 }
@@ -602,7 +602,7 @@ func (td TupleDesc) formatValue(enc Encoding, i int, value []byte) string {
 		v := readFloat32(value)
 		return fmt.Sprintf("%f", v)
 	case Float64Enc:
-		v := readFloat64(value)
+		v := ReadFloat64(value)
 		return fmt.Sprintf("%f", v)
 	case Bit64Enc:
 		v := readUint64(value)

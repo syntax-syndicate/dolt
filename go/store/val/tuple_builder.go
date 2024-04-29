@@ -221,7 +221,7 @@ func (tb *TupleBuilder) PutFloat64(i int, v float64) {
 	tb.Desc.expectEncoding(i, Float64Enc)
 	tb.ensureCapacity(float64Size)
 	tb.fields[i] = tb.buf[tb.pos : tb.pos+float64Size]
-	writeFloat64(tb.fields[i], v)
+	WriteFloat64(tb.fields[i], v)
 	tb.pos += float64Size
 }
 

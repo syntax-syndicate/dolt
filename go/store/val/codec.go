@@ -386,12 +386,12 @@ func compareFloat32(l, r float32) int {
 	}
 }
 
-func readFloat64(val []byte) float64 {
+func ReadFloat64(val []byte) float64 {
 	expectSize(val, float64Size)
 	return math.Float64frombits(readUint64(val))
 }
 
-func writeFloat64(buf []byte, val float64) {
+func WriteFloat64(buf []byte, val float64) {
 	expectSize(buf, float64Size)
 	binary.LittleEndian.PutUint64(buf, math.Float64bits(val))
 }

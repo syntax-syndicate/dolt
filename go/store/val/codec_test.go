@@ -282,7 +282,7 @@ func encUint(u uint64) []byte {
 
 func encFloat(f float64) []byte {
 	buf := make([]byte, float64Size)
-	writeFloat64(buf, f)
+	WriteFloat64(buf, f)
 	return buf
 }
 
@@ -501,8 +501,8 @@ func roundTripFloats(t *testing.T) {
 	floats = append(floats, math.MaxFloat64, math.SmallestNonzeroFloat64)
 	for _, value := range floats {
 		exp := float64(value)
-		writeFloat64(buf, exp)
-		assert.Equal(t, exp, readFloat64(buf))
+		WriteFloat64(buf, exp)
+		assert.Equal(t, exp, ReadFloat64(buf))
 		zero(buf)
 	}
 }

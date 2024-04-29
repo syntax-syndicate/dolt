@@ -112,7 +112,7 @@ func compare(typ Type, left, right []byte) int {
 	case Float32Enc:
 		return compareFloat32(readFloat32(left), readFloat32(right))
 	case Float64Enc:
-		return compareFloat64(readFloat64(left), readFloat64(right))
+		return compareFloat64(ReadFloat64(left), ReadFloat64(right))
 	case Bit64Enc:
 		return compareBit64(readBit64(left), readBit64(right))
 	case DecimalEnc:
