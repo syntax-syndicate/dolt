@@ -51,6 +51,8 @@ func NewServer(ctx context.Context, dir string, serverConfig ServerConfig, killS
 	gServer, serverCtx := errgroup.WithContext(withKeyCtx)
 
 	server := ExecCommand(serverCtx, serverConfig.GetServerExec(), serverParams...)
+	server.Stdout = os.Stdout
+	server.Stderr = os.Stderr
 	server.Dir = dir
 
 	quit := make(chan os.Signal, 1)

@@ -55,11 +55,17 @@ func (t *tpccTesterImpl) prepare(ctx context.Context) error {
 	args := t.test.GetPrepareArgs(t.serverConfig)
 	cmd := exec.CommandContext(ctx, t.tpccCommand, args...)
 	cmd = t.updateCmdEnv(cmd)
-	out, err := cmd.Output()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
 	if err != nil {
-		fmt.Println(string(out))
 		return err
 	}
+	//out, err := cmd.Output()
+	//if err != nil {
+	//	fmt.Println(string(out))
+	//	return err
+	//}
 	return nil
 }
 
