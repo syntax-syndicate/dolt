@@ -14,7 +14,10 @@
 
 package val
 
-import "bytes"
+import (
+	"bytes"
+	"slices"
+)
 
 // TupleComparator compares Tuples.
 type TupleComparator interface {
@@ -142,6 +145,11 @@ func compare(typ Type, left, right []byte) int {
 	case CommitAddrEnc:
 		return compareAddr(readAddr(left), readAddr(right))
 	case JSONAddrEnc:
+		// TODO: Have proper comparison function.
+		if slices.Equal(left, right) {
+			return 0
+		}
+		return -1
 		return compareAddr(readAddr(left), readAddr(right))
 	case StringAddrEnc:
 		return compareAddr(readAddr(left), readAddr(right))

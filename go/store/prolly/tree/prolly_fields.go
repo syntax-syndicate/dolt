@@ -125,11 +125,13 @@ func GetField(ctx context.Context, td val.TupleDesc, i int, tup val.Tuple, ns No
 			v, err = NewByteArray(h, ns).ToBytes(ctx)
 		}
 	case val.JSONAddrEnc:
-		var h hash.Hash
-		h, ok = td.GetJSONAddr(i, tup)
-		if ok {
-			v, err = NewJSONDoc(h, ns).ToLazyJSONDocument(ctx)
-		}
+		b := td.GetField(i, tup)
+		// TODO: Since we're embedding these addresses, are they missed by the garbage collector?
+		// First byte is the tag type
+		tag := b[0]
+		v, err = ResolveJson(ctx, tag, b[1:], ns)
+		ok = true
+
 	case val.StringAddrEnc:
 		var h hash.Hash
 		h, ok = td.GetStringAddr(i, tup)
@@ -163,6 +165,40 @@ func GetField(ctx context.Context, td val.TupleDesc, i int, tup val.Tuple, ns No
 		return nil, err
 	}
 	return v, err
+}
+
+const (
+	BLOB     byte = 0
+	BIT      byte = 1
+	OPAQUE   byte = 2
+	DATETIME byte = 3
+	TIME     byte = 4
+	DATE     byte = 5
+	BOOLEAN  byte = 6
+	ARRAY    byte = 7
+	OBJECT   byte = 8
+	STRING   byte = 9
+	INTEGER  byte = 10
+	DOUBLE   byte = 11
+	DECIMAL  byte = 12
+	NULL     byte = 13
+)
+
+func ResolveJson(ctx context.Context, tag byte, remainder []byte, ns NodeStore) (v interface{}, err error) {
+	switch tag {
+	case BLOB:
+		return remainder, nil
+	case OBJECT:
+		m, err := NewJSONMapFromHash(ctx, hash.New(remainder), ns)
+		if err != nil {
+			return nil, err
+		}
+		return m.ToInterface()
+	case DOUBLE:
+		return val.ReadFloat64(remainder), nil
+	default:
+		return nil, fmt.Errorf("unknown byte tag")
+	}
 }
 
 // Serialize writes an interface{} into the byte string representation used in val.Tuple, and returns the byte string,
@@ -249,15 +285,31 @@ func PutField(ctx context.Context, ns NodeStore, tb *val.TupleBuilder, i int, v 
 		}
 		tb.PutGeometryAddr(i, h)
 	case val.JSONAddrEnc:
-		buf, err := convJson(v)
+		tag, vv, err := getJsonTag(v)
 		if err != nil {
 			return err
 		}
-		h, err := SerializeBytesToAddr(ctx, ns, bytes.NewReader(buf), len(buf))
+		switch tag {
+		case OBJECT:
+			h, err := NewJSONMApFromGolangMap(ctx, ns, vv.(map[string]interface{}))
+			if err != nil {
+				return err
+			}
+			tb.PutRaw(i, append([]byte{OBJECT}, h[:]...))
+		case DOUBLE:
+			bytes, err := Serialize(ctx, ns, val.Type{Enc: val.Float64Enc, Nullable: false}, vv)
+			if err != nil {
+				return err
+			}
+			tb.PutRaw(i, append([]byte{DOUBLE}, bytes...))
+		default:
+			panic("")
+		}
 		if err != nil {
 			return err
 		}
-		tb.PutJSONAddr(i, h)
+
+		// tb.PutRaw(i)
 	case val.BytesAddrEnc:
 		h, err := SerializeBytesToAddr(ctx, ns, bytes.NewReader(v.([]byte)), len(v.([]byte)))
 		if err != nil {
@@ -305,6 +357,23 @@ func PutField(ctx context.Context, ns NodeStore, tb *val.TupleBuilder, i int, v 
 		panic(fmt.Sprintf("unknown encoding %v %v", enc, v))
 	}
 	return nil
+}
+
+func getJsonTag(v interface{}) (byte, vv interface{}, err error) {
+	if wrapper, ok := v.(sql.JSONWrapper); ok {
+		v, err = wrapper.ToInterface()
+		if err != nil {
+			return 255, nil, err
+		}
+	}
+	switch val := v.(type) {
+	case float64:
+		return DOUBLE, val, nil
+	case map[string]interface{}:
+		return OBJECT, val, nil
+	default:
+		return 255, nil, nil
+	}
 }
 
 func convInt(v interface{}) int {

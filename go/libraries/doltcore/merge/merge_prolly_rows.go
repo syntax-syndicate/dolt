@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dolthub/dolt/go/store/prolly/message"
 	"io"
+	"slices"
 
 	"github.com/dolthub/go-mysql-server/sql"
 	"github.com/dolthub/go-mysql-server/sql/expression"
@@ -1965,7 +1967,7 @@ func (m *valueMerger) processColumn(ctx *sql.Context, i int, left, right, base v
 			return nil, true, err
 		}
 		if _, ok := sqlType.(types.JsonType); ok && !disallowJsonMerge {
-			return m.mergeJSONAddr(ctx, baseCol, leftCol, rightCol)
+			return m.mergeJSONMaps(ctx, baseCol, leftCol, rightCol)
 		}
 		// otherwise, this is a conflict.
 		return nil, true, nil
@@ -2069,6 +2071,89 @@ func mergeJSON(base types.JSONDocument, left types.JSONDocument, right types.JSO
 			panic("unreachable")
 		}
 	}
+}
+
+func (m *valueMerger) mergeJSONMaps(ctx *sql.Context, base []byte, left []byte, right []byte) (result []byte, conflict bool, err error) {
+	// First, deserialize each value into JSON.
+	// We can only merge if the value at all three commits is a JSON object.
+
+	baseTag := base[0]
+	leftTag := left[0]
+	rightTag := right[0]
+
+	if (baseTag != tree.OBJECT) || (leftTag != tree.OBJECT) || (rightTag != tree.OBJECT) {
+		// At least one of the commits does not have a JSON object.
+		// If both left and right have the same value, use that value.
+		// But if they differ, this is an unresolvable merge conflict.
+		if slices.Equal(left, right) {
+			return left, false, nil
+		} else {
+			return nil, true, nil
+		}
+	}
+
+	baseRemaining := base[1:]
+	leftRemaining := left[1:]
+	rightRemaining := right[1:]
+
+	baseMap, err := tree.NewJSONMapFromHash(ctx, hash.New(baseRemaining), m.ns)
+	if err != nil {
+		return nil, true, err
+	}
+	leftMap, err := tree.NewJSONMapFromHash(ctx, hash.New(leftRemaining), m.ns)
+	if err != nil {
+		return nil, true, err
+	}
+	rightMap, err := tree.NewJSONMapFromHash(ctx, hash.New(rightRemaining), m.ns)
+	if err != nil {
+		return nil, true, err
+	}
+
+	differ, err := tree.NewJSONThreeWayDiffer(ctx, m.ns,
+		*leftMap, *rightMap, *baseMap)
+
+	mergedMap := tree.JSONStaticMap(*leftMap).Mutate()
+	// Compute the merged object by applying diffs to the left object as needed.
+	for {
+		threeWayDiff, err := differ.Next(ctx)
+		if err == io.EOF {
+			break
+		}
+
+		switch threeWayDiff.Op {
+		case tree.DiffOpRightAdd, tree.DiffOpConvergentAdd, tree.DiffOpRightModify, tree.DiffOpConvergentModify:
+			err := mergedMap.Put(ctx, []byte(threeWayDiff.Key), []byte(threeWayDiff.Right))
+			if err != nil {
+				return nil, true, err
+			}
+		case tree.DiffOpRightDelete, tree.DiffOpConvergentDelete:
+			err := mergedMap.Delete(ctx, []byte(threeWayDiff.Key))
+			if err != nil {
+				return nil, true, err
+			}
+		case tree.DiffOpLeftAdd, tree.DiffOpLeftModify, tree.DiffOpLeftDelete:
+			// these changes already exist on the left, so do nothing.
+		case tree.DiffOpDivergentModifyConflict, tree.DiffOpDivergentDeleteConflict:
+			return nil, true, nil
+		default:
+			panic("unreachable")
+		}
+	}
+
+	fn := tree.ApplyMutations[tree.JPath, tree.Lexicographic, message.Serializer]
+
+	var valDesc = val.NewTupleDescriptor(
+		val.Type{Enc: val.ByteStringEnc, Nullable: false},
+	)
+	serializer := message.NewProllyMapSerializer(valDesc, m.ns.Pool())
+
+	root, err := fn(ctx, m.ns, mergedMap.Static.Root, tree.Lexicographic{}, serializer, mergedMap.Mutations())
+	if err != nil {
+		return nil, true, err
+	}
+
+	hash := root.HashOf()
+	return append([]byte{tree.OBJECT}, hash[:]...), false, nil
 }
 
 func isEqual(i int, left []byte, right []byte, resultType val.Type) bool {

@@ -107,7 +107,6 @@ func IsAddrEncoding(enc Encoding) bool {
 	case BytesAddrEnc,
 		CommitAddrEnc,
 		StringAddrEnc,
-		JSONAddrEnc,
 		GeomAddrEnc,
 		ExtendedAddrEnc:
 		return true
