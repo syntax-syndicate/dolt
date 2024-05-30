@@ -23,30 +23,30 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// doltBinlogPrimaryController implements the binlogreplication.BinlogPrimaryController
+// DoltBinlogPrimaryController implements the binlogreplication.BinlogPrimaryController
 // interface from GMS and is the main extension point where Dolt plugs in to GMS and
 // interprets commands and statements related to serving binlog events.
-type doltBinlogPrimaryController struct {
+type DoltBinlogPrimaryController struct {
 	streamerManager *binlogStreamerManager
 	BinlogProducer  *binlogProducer
 }
 
-var _ binlogreplication.BinlogPrimaryController = (*doltBinlogPrimaryController)(nil)
+var _ binlogreplication.BinlogPrimaryController = (*DoltBinlogPrimaryController)(nil)
 
-// NewDoltBinlogPrimaryController creates a new doltBinlogPrimaryController instance.
-func NewDoltBinlogPrimaryController() *doltBinlogPrimaryController {
-	controller := doltBinlogPrimaryController{
+// NewDoltBinlogPrimaryController creates a new DoltBinlogPrimaryController instance.
+func NewDoltBinlogPrimaryController() *DoltBinlogPrimaryController {
+	controller := DoltBinlogPrimaryController{
 		streamerManager: newBinlogStreamerManager(),
 	}
 	return &controller
 }
 
-func (d *doltBinlogPrimaryController) StreamerManager() *binlogStreamerManager {
+func (d *DoltBinlogPrimaryController) StreamerManager() *binlogStreamerManager {
 	return d.streamerManager
 }
 
 // RegisterReplica implements the BinlogPrimaryController interface.
-func (d *doltBinlogPrimaryController) RegisterReplica(ctx *sql.Context, c *mysql.Conn, replicaHost string, replicaPort uint16) error {
+func (d *DoltBinlogPrimaryController) RegisterReplica(ctx *sql.Context, c *mysql.Conn, replicaHost string, replicaPort uint16) error {
 	if d.BinlogProducer == nil {
 		return fmt.Errorf("no binlog currently being recorded; make sure the server is started with @@log_bin enabled")
 	}
@@ -55,7 +55,7 @@ func (d *doltBinlogPrimaryController) RegisterReplica(ctx *sql.Context, c *mysql
 }
 
 // BinlogDumpGtid implements the BinlogPrimaryController interface.
-func (d *doltBinlogPrimaryController) BinlogDumpGtid(ctx *sql.Context, conn *mysql.Conn, gtidSet mysql.GTIDSet) error {
+func (d *DoltBinlogPrimaryController) BinlogDumpGtid(ctx *sql.Context, conn *mysql.Conn, gtidSet mysql.GTIDSet) error {
 	if d.BinlogProducer == nil {
 		return fmt.Errorf("no binlog currently being recorded; make sure the server is started with @@log_bin enabled")
 	}
@@ -71,19 +71,19 @@ func (d *doltBinlogPrimaryController) BinlogDumpGtid(ctx *sql.Context, conn *mys
 }
 
 // ListReplicas implements the BinlogPrimaryController interface.
-func (d *doltBinlogPrimaryController) ListReplicas(ctx *sql.Context) error {
+func (d *DoltBinlogPrimaryController) ListReplicas(ctx *sql.Context) error {
 	return fmt.Errorf("ListReplicas not implemented in Dolt yet")
 }
 
 // ListBinaryLogs implements the BinlogPrimaryController interface.
-func (d *doltBinlogPrimaryController) ListBinaryLogs(ctx *sql.Context) error {
+func (d *DoltBinlogPrimaryController) ListBinaryLogs(ctx *sql.Context) error {
 	return fmt.Errorf("ListBinaryLogs not implemented in Dolt yet")
 }
 
 // GetBinaryLogStatus implements the BinlogPrimaryController interface.
-func (d *doltBinlogPrimaryController) GetBinaryLogStatus(ctx *sql.Context) ([]binlogreplication.BinaryLogStatus, error) {
+func (d *DoltBinlogPrimaryController) GetBinaryLogStatus(ctx *sql.Context) ([]binlogreplication.BinaryLogStatus, error) {
 	return []binlogreplication.BinaryLogStatus{{
-		File:          binlogFilename,
+		File:          d.streamerManager.logManager.currentBinlogFileName,
 		Position:      uint(d.BinlogProducer.binlogStream.LogPosition),
 		DoDbs:         "",
 		IgnoreDbs:     "",

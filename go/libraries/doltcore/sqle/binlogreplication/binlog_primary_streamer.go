@@ -15,7 +15,10 @@
 package binlogreplication
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -49,22 +52,36 @@ func newBinlogStreamer() *binlogStreamer {
 // and |binlogStream| records the position of the stream. This method blocks until an error
 // is received over the stream (e.g. the connection closing) or the streamer is closed,
 // through it's quit channel.
-func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
-	if err := sendInitialEvents(ctx, conn, binlogFormat, binlogStream); err != nil {
+func (streamer *binlogStreamer) startStream(_ *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream, logfile string) error {
+	logrus.Errorf("Starting stream... (connection ID: %d)", conn.ConnectionID)
+
+	// TODO: Maybe we should just ask the LogManager to give us the file for reading?
+	file, err := os.Open(logfile)
+	if err != nil {
 		return err
 	}
+	buffer := make([]byte, len(binlogFileMagicNumber))
+	bytesRead, err := file.Read(buffer)
+	if err != nil {
+		return err
+	}
+	if bytesRead != len(binlogFileMagicNumber) || string(buffer) != string(binlogFileMagicNumber) {
+		return fmt.Errorf("invalid magic number in binlog file!")
+	}
+
+	defer file.Close()
 
 	for {
-		logrus.StandardLogger().Trace("binlog streamer is listening for messages")
+		logrus.Trace("binlog streamer is listening for messages")
 
 		select {
 		case <-streamer.quitChan:
-			logrus.StandardLogger().Trace("received message from streamer's quit channel")
+			logrus.Trace("received message from streamer's quit channel")
 			streamer.ticker.Stop()
 			return nil
 
 		case <-streamer.ticker.C:
-			logrus.StandardLogger().Trace("sending binlog heartbeat")
+			logrus.Trace("sending binlog heartbeat")
 			if err := sendHeartbeat(conn, binlogFormat, binlogStream); err != nil {
 				return err
 			}
@@ -73,7 +90,7 @@ func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, 
 			}
 
 		case events := <-streamer.eventChan:
-			logrus.StandardLogger().Tracef("streaming %d binlog events", len(events))
+			logrus.Tracef("streaming %d binlog events", len(events))
 			for _, event := range events {
 				if err := conn.WriteBinlogEvent(event, false); err != nil {
 					return err
@@ -82,6 +99,74 @@ func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, 
 			if err := conn.FlushBuffer(); err != nil {
 				return fmt.Errorf("unable to flush binlog connection: %s", err.Error())
 			}
+
+		default:
+			// TODO: Start with a simple polling approach, but we may need to change to
+			//       inotify or something more efficient in the future.
+			logrus.Debug("checking file for new data...")
+			eof := false
+			for !eof {
+				headerBuffer := make([]byte, 4+1+4+4+4+2)
+				bytesRead, err := file.Read(headerBuffer)
+				if err != nil && err != io.EOF {
+					return err
+				}
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+
+				// Event Header:
+				//timestamp := headerBuffer[0:4]
+				//eventType := headerBuffer[4]
+				//serverId := binary.LittleEndian.Uint32(headerBuffer[5:5+4])
+				eventSize := binary.LittleEndian.Uint32(headerBuffer[9 : 9+4])
+
+				payloadBuffer := make([]byte, eventSize-uint32(len(headerBuffer)))
+				bytesRead, err = file.Read(payloadBuffer)
+				if err != nil && err != io.EOF {
+					return err
+				}
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				logrus.Errorf("read %d bytes from binlog file", bytesRead)
+
+				if bytesRead > 0 {
+					// TODO: We can't use conn.Conn.Write!
+					//       We need to use conn.WriteBinlogEvent, because it writes other data to the socket (e.g. OK packets)
+
+					binlogEvent := mysql.NewMysql56BinlogEvent(append(headerBuffer, payloadBuffer...))
+
+					if binlogEvent.IsRotate() {
+						// TODO: if this is a rotate event, then we need to switch to the new binlog file after
+						//       we write this event out to the replica.
+						binlogEvent.IsRotate()
+						newLogfile := payloadBuffer[8:]
+						logrus.Errorf("Rotatating to new binlog file: %s", newLogfile)
+						// TODO: We need a way to convert the bare filename to a full path, in the right directory
+					}
+
+					// Components of Log File support:
+					//  - streamers streaming from log files
+					//  - rotating log files (on startup, and on flush logs, and on size threshold)
+					//  - purging log files (on request, and automatically, aging out)
+					//  - looking up starting point in log file, based on GTID
+					// TOTAL TIME ESTIMATE: 15 days?
+
+					err := conn.WriteBinlogEvent(binlogEvent, false)
+					if err != nil {
+						return err
+					}
+
+					err = conn.FlushBuffer()
+					if err != nil {
+						return err
+					}
+				}
+			}
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 }
@@ -93,6 +178,7 @@ type binlogStreamerManager struct {
 	streamers      []*binlogStreamer
 	streamersMutex sync.Mutex
 	quitChan       chan struct{}
+	logManager     *LogManager
 }
 
 // NewBinlogStreamerManager creates a new binlogStreamerManager instance.
@@ -138,15 +224,7 @@ func (m *binlogStreamerManager) StartStream(ctx *sql.Context, conn *mysql.Conn, 
 	m.addStreamer(streamer)
 	defer m.removeStreamer(streamer)
 
-	return streamer.startStream(ctx, conn, binlogFormat, binlogStream)
-}
-
-// sendEvents sends |binlogEvents| to all the streams managed by this instance.
-func (m *binlogStreamerManager) sendEvents(binlogEvents []mysql.BinlogEvent) {
-	for _, streamer := range m.copyStreamers() {
-		logrus.StandardLogger().Tracef("queuing %d binlog events\n", len(binlogEvents))
-		streamer.eventChan <- binlogEvents
-	}
+	return streamer.startStream(ctx, conn, binlogFormat, binlogStream, m.logManager.currentBinlogFilepath())
 }
 
 // addStreamer adds |streamer| to the slice of streamers managed by this binlogStreamerManager.
@@ -170,40 +248,16 @@ func (m *binlogStreamerManager) removeStreamer(streamer *binlogStreamer) {
 	}
 }
 
+// LogManager sets the LogManager this streamer manager will work with to find
+// and read from binlog files.
+func (m *binlogStreamerManager) LogManager(manager *LogManager) {
+	m.logManager = manager
+}
+
 func sendHeartbeat(conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
 	binlogStream.Timestamp = uint32(0) // Timestamp is zero for a heartbeat event
 	logrus.WithField("log_position", binlogStream.LogPosition).Tracef("sending heartbeat")
 
-	binlogEvent := mysql.NewHeartbeatEventWithLogFile(*binlogFormat, binlogStream, binlogFilename)
-	return conn.WriteBinlogEvent(binlogEvent, false)
-}
-
-// sendInitialEvents sends the initial binlog events (i.e. Rotate, FormatDescription) over a newly established binlog
-// streaming connection.
-func sendInitialEvents(_ *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
-	err := sendRotateEvent(conn, binlogFormat, binlogStream)
-	if err != nil {
-		return err
-	}
-
-	err = sendFormatDescription(conn, binlogFormat, binlogStream)
-	if err != nil {
-		return err
-	}
-
-	return conn.FlushBuffer()
-}
-
-func sendRotateEvent(conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
-	binlogFilePosition := uint64(0)
-	binlogStream.LogPosition = uint32(binlogFilePosition)
-
-	binlogEvent := mysql.NewRotateEvent(*binlogFormat, binlogStream, binlogFilePosition, binlogFilename)
-	return conn.WriteBinlogEvent(binlogEvent, false)
-}
-
-func sendFormatDescription(conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
-	binlogEvent := mysql.NewFormatDescriptionEvent(*binlogFormat, binlogStream)
-	binlogStream.LogPosition += binlogEvent.Length()
+	binlogEvent := mysql.NewHeartbeatEvent(*binlogFormat, binlogStream)
 	return conn.WriteBinlogEvent(binlogEvent, false)
 }
