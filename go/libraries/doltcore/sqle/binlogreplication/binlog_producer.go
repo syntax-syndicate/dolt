@@ -84,8 +84,8 @@ func (b *binlogProducer) BinlogFormat() *mysql.BinlogFormat {
 // TODO: It's kinda weird for us to expose BinlogStream here... This type doesn't seem fully necessary, and
 //
 //	stream seems like a bad name. Might be a better way to shape this in Vitess.
-func (b *binlogProducer) BinlogStream() *mysql.BinlogStream {
-	return b.binlogStream
+func (b *binlogProducer) BinlogStream() mysql.BinlogEventMetadata {
+	return b.binlogEventMeta
 }
 
 // WorkingRootUpdated implements the doltdb.DatabaseUpdateListener interface. When a working root changes,

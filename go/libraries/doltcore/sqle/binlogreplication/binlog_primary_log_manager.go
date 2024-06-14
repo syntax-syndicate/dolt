@@ -48,7 +48,7 @@ type LogManager struct {
 // NewLogManager creates a new LogManager instance where binlog files are stored in the .dolt/binlog directory
 // underneath the specified |fs| filesystem. The |binlogFormat| and |binlogStream| are used to initialize the
 // new binlog file.
-func NewLogManager(fs filesys.Filesys, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) *LogManager {
+func NewLogManager(fs filesys.Filesys, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) *LogManager {
 	// TODO: On server startup, we need to find the most recent binlog file, add a rotate event at the end (if necessary?), and start a new file. Documentation seems to indicate that a rotate event is added at the end of a binlog file, so that the streamer can jump to the next file, but I don't see this in our MySQL sample binlog files. Need to do more testing here.
 
 	lm := &LogManager{
@@ -70,11 +70,11 @@ func NewLogManager(fs filesys.Filesys, binlogFormat *mysql.BinlogFormat, binlogS
 	}
 	lm.currentBinlogFileName = nextLogFilename
 
-	// Ugh... we need binlogFormat and binlogStream in order to do this...
-	// Actually... Do we need binlogStream, or could we fake it? We only need binlogStream so that
+	// Ugh... we need binlogFormat and binlogEventMeta in order to do this...
+	// Actually... Do we need binlogEventMeta, or could we fake it? We only need binlogEventMeta so that
 	// Vitess can call a function on that instance, and for the server Id. The position in the file
 	// should always be zero at this point, so maybe we could clean this up more?
-	err = lm.initializeCurrentLogFile(binlogFormat, binlogStream)
+	err = lm.initializeCurrentLogFile(binlogFormat, binlogEventMeta)
 	if err != nil {
 		panic(err)
 	}
@@ -173,7 +173,7 @@ func (lm *LogManager) PurgeLogFiles() error {
 	return nil
 }
 
-func (lm *LogManager) initializeCurrentLogFile(binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
+func (lm *LogManager) initializeCurrentLogFile(binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
 	// Open the file in append mode
 	// TODO: we should probably create this file as soon as possible, like when we construct LogManager
 	// TODO: But, we should only construct log manager when binlogging is enabled
@@ -191,11 +191,11 @@ func (lm *LogManager) initializeCurrentLogFile(binlogFormat *mysql.BinlogFormat,
 
 	// TODO: Do we need to do this?
 	binlogFilePosition := uint64(0)
-	binlogStream.LogPosition = uint32(binlogFilePosition)
+	binlogEventMeta.NextLogPosition = uint32(binlogFilePosition)
 
 	// Write Format Event
-	binlogEvent := mysql.NewFormatDescriptionEvent(*binlogFormat, binlogStream)
-	binlogStream.LogPosition += binlogEvent.Length()
+	binlogEvent := mysql.NewFormatDescriptionEvent(*binlogFormat, binlogEventMeta)
+	binlogEventMeta.NextLogPosition += binlogEvent.Length()
 	_, err = lm.currentBinlogFile.Write(binlogEvent.Bytes())
 	return err
 }
