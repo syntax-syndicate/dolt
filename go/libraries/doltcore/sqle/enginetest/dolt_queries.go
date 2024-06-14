@@ -7053,3 +7053,96 @@ var DoltSystemVariables = []queries.ScriptTest{
 		},
 	},
 }
+
+// DoltTempTableScripts tests temporary tables.
+// Temporary tables are not supported in GMS, eventually should move those tests there.
+var DoltTempTableScripts = []queries.ScriptTest{
+	{
+		Name: "temporary table supports auto increment",
+		SetUpScript: []string{
+			"create temporary table t (i int primary key auto_increment)",
+		},
+		Assertions: []queries.ScriptTestAssertion{
+			{
+				Query: "show create table t;",
+				Expected: []sql.Row{
+					{"t", "CREATE TABLE `t` (\n" +
+						"  `i` int NOT NULL AUTO_INCREMENT,\n" +
+						"  PRIMARY KEY (`i`)\n" +
+						") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin"},
+				},
+			},
+			{
+				Query: "insert into t values (), (), ()",
+				Expected: []sql.Row{
+					{types.OkResult{RowsAffected: 3, InsertID: 1}},
+				},
+			},
+			{
+				Query: "show create table t;",
+				Expected: []sql.Row{
+					{"t", "CREATE TABLE `t` (\n" +
+						"  `i` int NOT NULL AUTO_INCREMENT,\n" +
+						"  PRIMARY KEY (`i`)\n" +
+						") ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin"},
+				},
+			},
+			{
+				Query: "select * from t",
+				Expected: []sql.Row{
+					{1},
+					{2},
+					{3},
+				},
+			},
+			{
+				Query: "insert into t values (100), (1000)",
+				Expected: []sql.Row{
+					{types.OkResult{RowsAffected: 2, InsertID: 0x64}},
+				},
+			},
+			{
+				Query: "show create table t;",
+				Expected: []sql.Row{
+					{"t", "CREATE TABLE `t` (\n" +
+						"  `i` int NOT NULL AUTO_INCREMENT,\n" +
+						"  PRIMARY KEY (`i`)\n" +
+						") ENGINE=InnoDB AUTO_INCREMENT=1001 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin"},
+				},
+			},
+			{
+				Query: "insert into t values (), (), ()",
+				Expected: []sql.Row{
+					{types.OkResult{RowsAffected: 3, InsertID: 0x3e9}},
+				},
+			},
+			{
+				Query: "select * from t",
+				Expected: []sql.Row{
+					{1},
+					{2},
+					{3},
+					{100},
+					{1000},
+					{1001},
+					{1002},
+					{1003},
+				},
+			},
+		},
+	},
+	{
+		Name: "temporary table tag collision",
+		SetUpScript: []string{
+			"CREATE TABLE note(a int, b int, userid int);",
+		},
+		Assertions: []queries.ScriptTestAssertion{
+			{
+				Query: "CREATE TEMPORARY TABLE tmp_tbl(a int, b int, c int, d int, e int, f int, g int);",
+				Expected: []sql.Row{
+					{types.NewOkResult(0)},
+				},
+			},
+		},
+	},
+}
