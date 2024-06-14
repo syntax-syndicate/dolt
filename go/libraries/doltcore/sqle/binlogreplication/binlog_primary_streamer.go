@@ -49,10 +49,10 @@ func newBinlogStreamer() *binlogStreamer {
 // startStream listens for new binlog events sent to this streamer over its binlog event
 // channel and sends them over |conn|. It also listens for ticker ticks to send hearbeats
 // over |conn|. The specified |binlogFormat| is used to define the format of binlog events
-// and |binlogStream| records the position of the stream. This method blocks until an error
+// and |binlogEventMeta| records the position of the stream. This method blocks until an error
 // is received over the stream (e.g. the connection closing) or the streamer is closed,
 // through it's quit channel.
-func (streamer *binlogStreamer) startStream(_ *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream, logfile string) error {
+func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata, logfile string) error {
 	logrus.Errorf("Starting stream... (connection ID: %d)", conn.ConnectionID)
 
 	// TODO: Maybe we should just ask the LogManager to give us the file for reading?
@@ -82,7 +82,7 @@ func (streamer *binlogStreamer) startStream(_ *sql.Context, conn *mysql.Conn, bi
 
 		case <-streamer.ticker.C:
 			logrus.Trace("sending binlog heartbeat")
-			if err := sendHeartbeat(conn, binlogFormat, binlogStream); err != nil {
+			if err := sendHeartbeat(conn, binlogFormat, binlogEventMeta); err != nil {
 				return err
 			}
 			if err := conn.FlushBuffer(); err != nil {
@@ -90,6 +90,10 @@ func (streamer *binlogStreamer) startStream(_ *sql.Context, conn *mysql.Conn, bi
 			}
 
 		case events := <-streamer.eventChan:
+			// TODO: If an error occurs while sending an event, it would be nice to have a retry at this
+			//       level. Technically the replica should be abel to automatically reconnect and restart
+			//       the stream from the last GTID it executed successfully, but it would be better to
+			//       avoid the extra work for the reconnection and restart if possible.
 			logrus.Tracef("streaming %d binlog events", len(events))
 			for _, event := range events {
 				if err := conn.WriteBinlogEvent(event, false); err != nil {
@@ -219,12 +223,12 @@ func (m *binlogStreamerManager) copyStreamers() []*binlogStreamer {
 // is closed, the streamer is sent a quit signal over its quit channel, or the streamer receives
 // errors while sending events over the connection. Note that this method blocks until the
 // streamer exits.
-func (m *binlogStreamerManager) StartStream(ctx *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
+func (m *binlogStreamerManager) StartStream(ctx *sql.Context, conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
 	streamer := newBinlogStreamer()
 	m.addStreamer(streamer)
 	defer m.removeStreamer(streamer)
 
-	return streamer.startStream(ctx, conn, binlogFormat, binlogStream, m.logManager.currentBinlogFilepath())
+	return streamer.startStream(ctx, conn, binlogFormat, binlogEventMeta, m.logManager.currentBinlogFilepath())
 }
 
 // addStreamer adds |streamer| to the slice of streamers managed by this binlogStreamerManager.
@@ -254,10 +258,10 @@ func (m *binlogStreamerManager) LogManager(manager *LogManager) {
 	m.logManager = manager
 }
 
-func sendHeartbeat(conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogStream *mysql.BinlogStream) error {
-	binlogStream.Timestamp = uint32(0) // Timestamp is zero for a heartbeat event
-	logrus.WithField("log_position", binlogStream.LogPosition).Tracef("sending heartbeat")
+func sendHeartbeat(conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
+	binlogEventMeta.Timestamp = uint32(0) // Timestamp is zero for a heartbeat event
+	logrus.WithField("log_position", binlogEventMeta.NextLogPosition).Tracef("sending heartbeat")
 
-	binlogEvent := mysql.NewHeartbeatEvent(*binlogFormat, binlogStream)
+	binlogEvent := mysql.NewHeartbeatEvent(*binlogFormat, binlogEventMeta)
 	return conn.WriteBinlogEvent(binlogEvent, false)
 }

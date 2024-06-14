@@ -124,7 +124,7 @@ func TestBinlogPrimary(t *testing.T) {
 	})
 
 	requirePrimaryResults(t, "SHOW BINARY LOG STATUS", [][]any{
-		{"binlog-main.000001", "2342", "", "", uuid + ":1-3"}})
+		{"binlog-main.000001", "2226", "", "", uuid + ":1-3"}})
 }
 
 // TestBinlogPrimary_ReplicaRestart tests that the Dolt primary server behaves correctly when the
@@ -361,6 +361,30 @@ func TestBinlogPrimary_SchemaChangesWithManualCommit(t *testing.T) {
 		"`c2` varchar(100) COLLATE utf8mb4_0900_bin DEFAULT NULL,\n  PRIMARY KEY (`pk`)\n) " +
 		"ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_bin"}})
 	requireReplicaResults(t, "select * from t;", [][]any{{"1", "one", "foo"}})
+}
+
+// TestBinlogPrimary_Rollback asserts that rolled back transactions are not sent to replicas.
+func TestBinlogPrimary_Rollback(t *testing.T) {
+	defer teardown(t)
+	startSqlServersWithDoltSystemVars(t, doltReplicationPrimarySystemVars)
+	setupForDoltToMySqlReplication()
+	startReplication(t, doltPort)
+
+	// Create a test table
+	primaryDatabase.MustExec("set @@autocommit=0;")
+	primaryDatabase.MustExec("start transaction;")
+	primaryDatabase.MustExec("create table t1 (pk int primary key, c1 varchar(100), c2 int);")
+	primaryDatabase.MustExec("commit;")
+	waitForReplicaToCatchUp(t)
+	requireReplicaResults(t, "show tables;", [][]any{{"t1"}})
+	requireReplicaResults(t, "select * from t1;", [][]any{})
+
+	// Insert data, but roll back the transaction
+	primaryDatabase.MustExec("start transaction;")
+	primaryDatabase.MustExec("insert into t1 values (1, 'two', 3);")
+	primaryDatabase.MustExec("rollback;")
+	waitForReplicaToCatchUp(t)
+	requireReplicaResults(t, "select * from t1;", [][]any{})
 }
 
 // TestBinlogPrimary_MultipleTablesManualCommit tests that binlog events are generated correctly

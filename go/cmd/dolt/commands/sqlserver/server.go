@@ -172,10 +172,6 @@ func ConfigureServices(
 				if err != nil {
 					logrus.Errorf("failed to load persisted global variables: %s\n", err.Error())
 				}
-				err = dsess.PersistSystemVarDefaults(dEnv)
-				if err != nil {
-					logrus.Errorf("failed to persist variable default value: %s\n", err.Error())
-				}
 			}
 			dEnv.Config.SetFailsafes(env.DefaultFailsafeConfig)
 			return nil
@@ -288,6 +284,22 @@ func ConfigureServices(
 		},
 	}
 	controller.Register(InitSqlEngine)
+
+	// Persist any system variables that have a non-deterministic default value (i.e. @@server_uuid)
+	// We only do this on sql-server startup initially since we want to keep the persisted server_uuid
+	// in the configuration files for a sql-server, and not global for the whole host.
+	PersistNondeterministicSystemVarDefaults := &svcs.AnonService{
+		InitF: func(ctx context.Context) error {
+			err := dsess.PersistSystemVarDefaults(dEnv)
+			if err != nil {
+				logrus.Errorf("unable to persist system variable defaults: %v", err)
+			}
+			// Always return nil, because we don't want an invalid config value to prevent
+			// the server from starting up.
+			return nil
+		},
+	}
+	controller.Register(PersistNondeterministicSystemVarDefaults)
 
 	InitBinlogging := &svcs.AnonService{
 		InitF: func(context.Context) error {
