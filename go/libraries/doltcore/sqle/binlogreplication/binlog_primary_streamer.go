@@ -89,20 +89,21 @@ func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, 
 				return fmt.Errorf("unable to flush binlog connection: %s", err.Error())
 			}
 
-		case events := <-streamer.eventChan:
-			// TODO: If an error occurs while sending an event, it would be nice to have a retry at this
-			//       level. Technically the replica should be abel to automatically reconnect and restart
-			//       the stream from the last GTID it executed successfully, but it would be better to
-			//       avoid the extra work for the reconnection and restart if possible.
-			logrus.Tracef("streaming %d binlog events", len(events))
-			for _, event := range events {
-				if err := conn.WriteBinlogEvent(event, false); err != nil {
-					return err
-				}
-			}
-			if err := conn.FlushBuffer(); err != nil {
-				return fmt.Errorf("unable to flush binlog connection: %s", err.Error())
-			}
+			// TODO: Remove streamer.eventChan!
+		//case events := <-streamer.eventChan:
+		//	// TODO: If an error occurs while sending an event, it would be nice to have a retry at this
+		//	//       level. Technically the replica should be abel to automatically reconnect and restart
+		//	//       the stream from the last GTID it executed successfully, but it would be better to
+		//	//       avoid the extra work for the reconnection and restart if possible.
+		//	logrus.Tracef("streaming %d binlog events", len(events))
+		//	for _, event := range events {
+		//		if err := conn.WriteBinlogEvent(event, false); err != nil {
+		//			return err
+		//		}
+		//	}
+		//	if err := conn.FlushBuffer(); err != nil {
+		//		return fmt.Errorf("unable to flush binlog connection: %s", err.Error())
+		//	}
 
 		default:
 			// TODO: Start with a simple polling approach, but we may need to change to
@@ -138,9 +139,6 @@ func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, 
 				logrus.Errorf("read %d bytes from binlog file", bytesRead)
 
 				if bytesRead > 0 {
-					// TODO: We can't use conn.Conn.Write!
-					//       We need to use conn.WriteBinlogEvent, because it writes other data to the socket (e.g. OK packets)
-
 					binlogEvent := mysql.NewMysql56BinlogEvent(append(headerBuffer, payloadBuffer...))
 
 					if binlogEvent.IsRotate() {
@@ -158,6 +156,9 @@ func (streamer *binlogStreamer) startStream(ctx *sql.Context, conn *mysql.Conn, 
 					//  - purging log files (on request, and automatically, aging out)
 					//  - looking up starting point in log file, based on GTID
 					// TOTAL TIME ESTIMATE: 15 days?
+
+					nextlogposition := binary.LittleEndian.Uint32(binlogEvent.Bytes()[13:17])
+					logrus.Errorf("Next log position: %d", nextlogposition)
 
 					err := conn.WriteBinlogEvent(binlogEvent, false)
 					if err != nil {
