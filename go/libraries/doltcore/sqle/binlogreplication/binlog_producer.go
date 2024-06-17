@@ -142,7 +142,7 @@ func (b *binlogProducer) WorkingRootUpdated(ctx *sql.Context, databaseName strin
 		binlogEvents = append(binlogEvents, b.newXIDEvent())
 	}
 
-	return b.streamerManager.logManager.WriteEvents(binlogEvents)
+	return b.streamerManager.logManager.WriteEvents(binlogEvents...)
 }
 
 // DatabaseCreated implements the doltdb.DatabaseUpdateListener interface.
@@ -161,7 +161,7 @@ func (b *binlogProducer) DatabaseCreated(ctx *sql.Context, databaseName string) 
 	createDatabaseStatement := fmt.Sprintf("create database `%s`;", databaseName)
 	binlogEvents = append(binlogEvents, b.newQueryEvent(databaseName, createDatabaseStatement))
 
-	return b.streamerManager.logManager.WriteEvents(binlogEvents)
+	return b.streamerManager.logManager.WriteEvents(binlogEvents...)
 }
 
 // DatabaseDropped implements the doltdb.DatabaseUpdateListener interface.
@@ -176,7 +176,7 @@ func (b *binlogProducer) DatabaseDropped(ctx *sql.Context, databaseName string) 
 	dropDatabaseStatement := fmt.Sprintf("drop database `%s`;", databaseName)
 	binlogEvents = append(binlogEvents, b.newQueryEvent(databaseName, dropDatabaseStatement))
 
-	return b.streamerManager.logManager.WriteEvents(binlogEvents)
+	return b.streamerManager.logManager.WriteEvents(binlogEvents...)
 }
 
 // initializeGtidPosition loads the persisted GTID position from disk and initializes it

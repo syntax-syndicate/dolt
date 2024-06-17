@@ -332,14 +332,14 @@ func ConfigureServices(
 				// TODO: This is a mess! How to clean this up!
 				provider := sqlEngine.GetUnderlyingEngine().Analyzer.Catalog.DbProvider
 				if doltProvider, ok := provider.(*sqle.DoltDatabaseProvider); ok {
-					doltProvider.InitDatabaseHooks = append(doltProvider.InitDatabaseHooks, binlogreplication.NewBinlogInitDatabaseHook(nil, doltdb.DatabaseUpdateListeners))
-					doltProvider.DropDatabaseHooks = append(doltProvider.DropDatabaseHooks, binlogreplication.NewBinlogDropDatabaseHook(nil, doltdb.DatabaseUpdateListeners))
+					doltProvider.AddInitDatabaseHook(binlogreplication.NewBinlogInitDatabaseHook(nil, doltdb.DatabaseUpdateListeners))
+					doltProvider.AddDropDatabaseHook(binlogreplication.NewBinlogDropDatabaseHook(nil, doltdb.DatabaseUpdateListeners))
 				}
 
 				// TODO: How do we feed the binlogStream and binlogFormat to the log manager?
 				//       Needs format to write the initial format event to the stream
 				//       Needs binlogStream to write the initial format event
-				logManager := binlogreplication.NewLogManager(fs, binlogProducer.BinlogFormat(), binlogProducer.BinlogStream())
+				logManager := binlogreplication.NewLogManager(fs, *binlogProducer.BinlogFormat(), binlogProducer.BinlogStream())
 				primaryController.StreamerManager().LogManager(logManager)
 			}
 

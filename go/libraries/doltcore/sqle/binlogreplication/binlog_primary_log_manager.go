@@ -17,21 +17,18 @@ package binlogreplication
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/dolthub/dolt/go/libraries/utils/filesys"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/dolthub/vitess/go/mysql"
-)
+	"github.com/sirupsen/logrus"
 
-// maxBinlogSize is the maximum size of a binlog file, before the binlog writer rotates to a new binlog file. Once
-// a binlog file reaches this size, or greater, the events from the next transaction should be written to a new file.
-// Note that all events in a single transaction should be written to the same binlog file.
-// This corresponds to the @@max_binlog_size system variable in MySQL:
-// https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_max_binlog_size
-const maxBinlogSize = 1024 * 1024 * 1024
+	"github.com/dolthub/dolt/go/libraries/utils/filesys"
+	"github.com/dolthub/go-mysql-server/sql"
+	gmstypes "github.com/dolthub/go-mysql-server/sql/types"
+)
 
 var binlogDirectory = filepath.Join(".dolt", "binlog")
 
@@ -42,17 +39,22 @@ var binlogFileMagicNumber = []byte{0xfe, 0x62, 0x69, 0x6e}
 type LogManager struct {
 	currentBinlogFile     *os.File
 	currentBinlogFileName string
+	currentPosition       int
 	fs                    filesys.Filesys
+	binlogFormat          mysql.BinlogFormat
+	binlogEventMeta       mysql.BinlogEventMetadata
 }
 
 // NewLogManager creates a new LogManager instance where binlog files are stored in the .dolt/binlog directory
 // underneath the specified |fs| filesystem. The |binlogFormat| and |binlogStream| are used to initialize the
 // new binlog file.
-func NewLogManager(fs filesys.Filesys, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) *LogManager {
+func NewLogManager(fs filesys.Filesys, binlogFormat mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) *LogManager {
 	// TODO: On server startup, we need to find the most recent binlog file, add a rotate event at the end (if necessary?), and start a new file. Documentation seems to indicate that a rotate event is added at the end of a binlog file, so that the streamer can jump to the next file, but I don't see this in our MySQL sample binlog files. Need to do more testing here.
 
 	lm := &LogManager{
-		fs: fs,
+		fs:              fs,
+		binlogFormat:    binlogFormat,
+		binlogEventMeta: binlogEventMeta,
 	}
 
 	// TODO: Could resolve the base dir for the binlog file directory here; would it help us avoid returning errors in other APIs?
@@ -155,13 +157,36 @@ func (lm *LogManager) mostRecentLogFileForBranch(branch string) (logFile string,
 	}
 }
 
+// RotateLogFile rotates the current log file that is actively being written to. A new binlog file is created and
+// initialized, including writing the first four bytes with the binlog magic number, and the old binlog file is closed.
+// Rotation should occur when an administrator explicitly requests it with the `FLUSH LOGS` statement, during server
+// shutdown or restart, or when the current binary log file size exceeds the maximum size defined by the
+// @@max_binlog_size system variable.
 func (lm *LogManager) RotateLogFile() error {
-	// TODO: Handle logfile rotation:
-	// - Manual rotation from the FLUSH LOGS statement (Out of scope)
-	// - Automatically when the binary log file reaches the maximum size defined by the max_binlog_size configuration parameter.
-	//   https://dev.mysql.com/doc/refman/8.0/en/replication-options-binary-log.html#sysvar_max_binlog_size
-	// - During a server shutdown or restart when the binary log is enabled.
-	return nil
+	nextLogFile, err := lm.nextLogFile()
+	if err != nil {
+		return err
+	}
+	logrus.Tracef("Rotating bin log file to: %s", nextLogFile)
+
+	binlogEvent := mysql.NewRotateEvent(lm.binlogFormat, lm.binlogEventMeta, 0, nextLogFile, 0)
+	if err = lm.WriteEvents(binlogEvent); err != nil {
+		return err
+	}
+
+	// TODO: There is some synchronization needed here, too... we need a lock on the log file so that no other
+	//      threads write after we write the rotate event.
+	//      The writer has got to be a singleton right, we can't have multiple threads sharing a single log file.
+	//      We're running over a channel, so that solves it
+
+	// Close the current binlog file
+	if err = lm.currentBinlogFile.Close(); err != nil {
+		logrus.Errorf("error closing current binlog file before rotating to new file: %s", err.Error())
+	}
+
+	// Open and initialize a new binlog file
+	lm.currentBinlogFileName = nextLogFile
+	return lm.initializeCurrentLogFile(lm.binlogFormat, lm.binlogEventMeta)
 }
 
 func (lm *LogManager) PurgeLogFiles() error {
@@ -173,54 +198,85 @@ func (lm *LogManager) PurgeLogFiles() error {
 	return nil
 }
 
-func (lm *LogManager) initializeCurrentLogFile(binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
+func (lm *LogManager) initializeCurrentLogFile(binlogFormat mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
+	logrus.Tracef("Initializing binlog file: %s", lm.currentBinlogFilepath())
+
 	// Open the file in append mode
-	// TODO: we should probably create this file as soon as possible, like when we construct LogManager
-	// TODO: But, we should only construct log manager when binlogging is enabled
 	file, err := os.OpenFile(lm.currentBinlogFilepath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
 	lm.currentBinlogFile = file
+	lm.currentPosition = 0
 
 	// Write Magic Number
 	_, err = file.Write(binlogFileMagicNumber)
 	if err != nil {
 		return err
 	}
+	lm.currentPosition += len(binlogFileMagicNumber)
 
-	// TODO: Do we need to do this?
-	binlogFilePosition := uint64(0)
-	binlogEventMeta.NextLogPosition = uint32(binlogFilePosition)
-
-	// Write Format Event
-	binlogEvent := mysql.NewFormatDescriptionEvent(*binlogFormat, binlogEventMeta)
+	// Write Format Event – FormatDescription should be the first event in each binlog file
+	binlogEvent := mysql.NewFormatDescriptionEvent(binlogFormat, binlogEventMeta)
 	binlogEventMeta.NextLogPosition += binlogEvent.Length()
-	_, err = lm.currentBinlogFile.Write(binlogEvent.Bytes())
-	return err
+	if err = lm.WriteEvents(binlogEvent); err != nil {
+		return err
+	}
+
+	// TODO: Write PreviousGtids event
+	//previousGtidSet := make(mysql.Mysql56GTIDSet)
+	//return lm.WriteEvents(mysql.NewPreviousGTIDsEvent(binlogFormat, binlogStream, previousGtidSet))
+
+	return nil
+}
+
+// lookupMaxBinlogSize looks up the value of the @@max_binlog_size system variable and returns it, along with any
+// errors encountered while looking it up.
+func lookupMaxBinlogSize() (int, error) {
+	_, value, ok := sql.SystemVariables.GetGlobal("max_binlog_size")
+	if !ok {
+		return 0, fmt.Errorf("system variable @@max_binlog_size not found")
+	}
+
+	intValue, _, err := gmstypes.Int32.Convert(value)
+	if err != nil {
+		return 0, err
+	}
+	return int(intValue.(int32)), nil
 }
 
 // WriteEvents writes |binlogEvents| to the current binlog file.
-func (lm *LogManager) WriteEvents(binlogEvents []mysql.BinlogEvent) error {
+func (lm *LogManager) WriteEvents(binlogEvents ...mysql.BinlogEvent) error {
+	maxBinlogSize, err := lookupMaxBinlogSize()
+	if err != nil {
+		return err
+	}
+
 	// Write to the file
 	rotateLogFile := false
 	for _, event := range binlogEvents {
-		nextPosition := binary.LittleEndian.Uint32(event.Bytes()[13 : 13+4])
-		if nextPosition > maxBinlogSize {
+		// NOTE: When we write the event to file, we need to ensure the next log position field
+		// is correct. That means we have to serialize the events going into the log file and
+		// we update their NextLogPosition field in the header to ensure it's correct. Because
+		// we change the packet, we must recompute the checksum.
+		// TODO: This means we can get rid of the position tracking code in the binlog producer type
+		nextPosition := lm.currentPosition + len(event.Bytes())
+		binary.LittleEndian.PutUint32(event.Bytes()[13:13+4], uint32(nextPosition))
+		mysql.RecomputeChecksum(lm.binlogFormat, event.Bytes())
+
+		lm.currentPosition = nextPosition
+		if nextPosition > maxBinlogSize && !event.IsRotate() {
 			rotateLogFile = true
 		}
 
+		// Write the event to file
 		if _, err := lm.currentBinlogFile.Write(event.Bytes()); err != nil {
 			return err
 		}
 	}
 
 	if rotateLogFile {
-		// TODO: We need to rotate after this transaction... (i.e. set of events)
-		// TODO: How do the streamers react when we rotate the binlog file?
-		//       If a streamer is reading a file, it needs to continue reading
-		// NOTE: FormatDescription event should be the very first entry in the binlog file,
-		//       and a Rotate event should be the very last entry in the (completed) binlog file.
+		// NOTE: Rotate event should be the very last entry in the (completed) binlog file.
 		//       Streamers will read the rotate event and know what file to open next.
 		return lm.RotateLogFile()
 	}
