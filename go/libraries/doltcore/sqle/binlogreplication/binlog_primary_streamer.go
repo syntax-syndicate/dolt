@@ -63,8 +63,7 @@ func (streamer *binlogStreamer) startStream(_ *sql.Context, conn *mysql.Conn, ex
 	binlogEventMetaCopy := binlogEventMeta
 	binlogEventMetaCopy.NextLogPosition = 0
 
-	// TODO: Define a const for this flag? Is anything from vitess exported?
-	rotateEvent := mysql.NewRotateEvent(*binlogFormat, binlogEventMetaCopy, 4, filepath.Base(logfile), 0x0020)
+	rotateEvent := mysql.NewFakeRotateEvent(*binlogFormat, binlogEventMetaCopy, filepath.Base(logfile))
 	if err = conn.WriteBinlogEvent(rotateEvent, false); err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dolthub/vitess/go/mysql"
 	"github.com/sirupsen/logrus"
@@ -36,7 +37,10 @@ var binlogDirectory = filepath.Join(".dolt", "binlog")
 // MySQL binlog file and identify the file as a MySQL binlog.
 var binlogFileMagicNumber = []byte{0xfe, 0x62, 0x69, 0x6e}
 
+// LogManager is responsible for the binary log files on disk, including actually writing events to the log files,
+// rotating the log files, listing the available log files, and purging old log files.
 type LogManager struct {
+	mu                    *sync.Mutex
 	currentBinlogFile     *os.File
 	currentBinlogFileName string
 	currentPosition       int
@@ -48,10 +52,11 @@ type LogManager struct {
 // NewLogManager creates a new LogManager instance where binlog files are stored in the .dolt/binlog directory
 // underneath the specified |fs| filesystem. The |binlogFormat| and |binlogStream| are used to initialize the
 // new binlog file.
-func NewLogManager(fs filesys.Filesys, binlogFormat mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) *LogManager {
+func NewLogManager(fs filesys.Filesys, binlogFormat mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) (*LogManager, error) {
 	// TODO: On server startup, we need to find the most recent binlog file, add a rotate event at the end (if necessary?), and start a new file. Documentation seems to indicate that a rotate event is added at the end of a binlog file, so that the streamer can jump to the next file, but I don't see this in our MySQL sample binlog files. Need to do more testing here.
 
 	lm := &LogManager{
+		mu:              &sync.Mutex{},
 		fs:              fs,
 		binlogFormat:    binlogFormat,
 		binlogEventMeta: binlogEventMeta,
@@ -62,28 +67,26 @@ func NewLogManager(fs filesys.Filesys, binlogFormat mysql.BinlogFormat, binlogEv
 	// Initialize binlog file storage (extract to function!)
 	err := fs.MkDirs(binlogDirectory)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// Initialize current binlog file
 	nextLogFilename, err := lm.nextLogFile()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	lm.currentBinlogFileName = nextLogFilename
 
-	// Ugh... we need binlogFormat and binlogEventMeta in order to do this...
-	// Actually... Do we need binlogEventMeta, or could we fake it? We only need binlogEventMeta so that
-	// Vitess can call a function on that instance, and for the server Id. The position in the file
-	// should always be zero at this point, so maybe we could clean this up more?
-	err = lm.initializeCurrentLogFile(binlogFormat, binlogEventMeta)
-	if err != nil {
-		panic(err)
+	if err = lm.initializeCurrentLogFile(binlogFormat, binlogEventMeta); err != nil {
+		return nil, err
 	}
 
-	return lm
+	return lm, nil
 }
 
+// nextLogFile returns the filename of the next bin log file in the current sequence. For example, if the
+// current log file is "binlog-main.000008" the nextLogFile() would return "binlog-main.000009". Note that
+// this function returns the file name only, not the full file path.
 func (lm *LogManager) nextLogFile() (filename string, err error) {
 	mostRecentLogfile, err := lm.mostRecentLogFileForBranch(BinlogBranch)
 	if err != nil {
@@ -169,15 +172,10 @@ func (lm *LogManager) RotateLogFile() error {
 	}
 	logrus.Tracef("Rotating bin log file to: %s", nextLogFile)
 
-	binlogEvent := mysql.NewRotateEvent(lm.binlogFormat, lm.binlogEventMeta, 0, nextLogFile, 0)
-	if err = lm.WriteEvents(binlogEvent); err != nil {
+	binlogEvent := mysql.NewRotateEvent(lm.binlogFormat, lm.binlogEventMeta, 0, nextLogFile)
+	if err = lm.writeEventsHelper(binlogEvent); err != nil {
 		return err
 	}
-
-	// TODO: There is some synchronization needed here, too... we need a lock on the log file so that no other
-	//      threads write after we write the rotate event.
-	//      The writer has got to be a singleton right, we can't have multiple threads sharing a single log file.
-	//      We're running over a channel, so that solves it
 
 	// Close the current binlog file
 	if err = lm.currentBinlogFile.Close(); err != nil {
@@ -198,6 +196,8 @@ func (lm *LogManager) PurgeLogFiles() error {
 	return nil
 }
 
+// initializeCurrentLogFile creates and opens the current binlog file for append only writing, writes the first four
+// bytes with the binlog magic numbers, then writes a Format Description event and a Previous GTIDs event.
 func (lm *LogManager) initializeCurrentLogFile(binlogFormat mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
 	logrus.Tracef("Initializing binlog file: %s", lm.currentBinlogFilepath())
 
@@ -216,18 +216,31 @@ func (lm *LogManager) initializeCurrentLogFile(binlogFormat mysql.BinlogFormat, 
 	}
 	lm.currentPosition += len(binlogFileMagicNumber)
 
-	// Write Format Event – FormatDescription should be the first event in each binlog file
+	// Write Format Description Event, the first event in each binlog file
 	binlogEvent := mysql.NewFormatDescriptionEvent(binlogFormat, binlogEventMeta)
-	binlogEventMeta.NextLogPosition += binlogEvent.Length()
-	if err = lm.WriteEvents(binlogEvent); err != nil {
+	if err = lm.writeEventsHelper(binlogEvent); err != nil {
 		return err
 	}
 
-	// TODO: Write PreviousGtids event
-	//previousGtidSet := make(mysql.Mysql56GTIDSet)
-	//return lm.WriteEvents(mysql.NewPreviousGTIDsEvent(binlogFormat, binlogStream, previousGtidSet))
+	// Write the Previous GTIDs event
+	// TODO: Instead of using the @@gtid_executed system variable, LogManager could keep track of which GTIDs
+	//       it has seen logged and use that as the source of truth for the Previous GTIDs event. This would
+	//       eliminate a race condition. In general, LogManager needs to track which GTIDs are represented in
+	//       which log files better to support clients seeking to the right point in the stream.
+	_, rawValue, ok := sql.SystemVariables.GetGlobal("gtid_executed")
+	if !ok {
+		panic("unable to find @@gtid_executed system variable")
+	}
+	stringValue, ok := rawValue.(string)
+	if !ok {
+		panic(fmt.Sprintf("unexpected type for @@gtid_executed system variable: %T", rawValue))
+	}
 
-	return nil
+	gtidSet, err := mysql.ParseMysql56GTIDSet(stringValue)
+	if err != nil {
+		return err
+	}
+	return lm.writeEventsHelper(mysql.NewPreviousGtidsEvent(binlogFormat, binlogEventMeta, gtidSet.(mysql.Mysql56GTIDSet)))
 }
 
 // lookupMaxBinlogSize looks up the value of the @@max_binlog_size system variable and returns it, along with any
@@ -245,8 +258,19 @@ func lookupMaxBinlogSize() (int, error) {
 	return int(intValue.(int32)), nil
 }
 
-// WriteEvents writes |binlogEvents| to the current binlog file.
+// WriteEvents writes |binlogEvents| to the current binlog file. Access to write to the binary log is synchronized,
+// so that only one thread can write to the log file at a time.
 func (lm *LogManager) WriteEvents(binlogEvents ...mysql.BinlogEvent) error {
+	// synchronize on WriteEvents so that only one thread is writing to the log file at a time
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
+	return lm.writeEventsHelper(binlogEvents...)
+}
+
+// writeEventsHelper writes |binlogEvents| to the current binlog file. This function is NOT synchronized, and is only
+// intended to be used from code inside LogManager that needs to be called transitively from the WriteEvents method.
+func (lm *LogManager) writeEventsHelper(binlogEvents ...mysql.BinlogEvent) error {
 	maxBinlogSize, err := lookupMaxBinlogSize()
 	if err != nil {
 		return err
@@ -259,10 +283,9 @@ func (lm *LogManager) WriteEvents(binlogEvents ...mysql.BinlogEvent) error {
 		// is correct. That means we have to serialize the events going into the log file and
 		// we update their NextLogPosition field in the header to ensure it's correct. Because
 		// we change the packet, we must recompute the checksum.
-		// TODO: This means we can get rid of the position tracking code in the binlog producer type
 		nextPosition := lm.currentPosition + len(event.Bytes())
 		binary.LittleEndian.PutUint32(event.Bytes()[13:13+4], uint32(nextPosition))
-		mysql.RecomputeChecksum(lm.binlogFormat, event.Bytes())
+		mysql.UpdateChecksum(lm.binlogFormat, event)
 
 		lm.currentPosition = nextPosition
 		if nextPosition > maxBinlogSize && !event.IsRotate() {

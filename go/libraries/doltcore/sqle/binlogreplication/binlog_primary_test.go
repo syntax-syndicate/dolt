@@ -124,7 +124,7 @@ func TestBinlogPrimary(t *testing.T) {
 	})
 
 	requirePrimaryResults(t, "SHOW BINARY LOG STATUS", [][]any{
-		{"binlog-main.000001", "2226", "", "", uuid + ":1-3"}})
+		{"binlog-main.000001", "2377", "", "", uuid + ":1-3"}})
 }
 
 // TestBinlogPrimary_Rotation tests how a Dolt primary server handles rotating the binary log file when the
@@ -149,7 +149,7 @@ func TestBinlogPrimary_Rotation(t *testing.T) {
 	// Check the binary log file status and ensure the file has been rotated
 	uuid := queryPrimaryServerUuid(t)
 	requirePrimaryResults(t, "show binary log status", [][]any{
-		{"binlog-main.000003", "21195", "", "", uuid + ":1-102"},
+		{"binlog-main.000003", "1027", "", "", uuid + ":1-102"},
 	})
 }
 

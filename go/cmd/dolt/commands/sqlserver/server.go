@@ -303,10 +303,8 @@ func ConfigureServices(
 
 	InitBinlogging := &svcs.AnonService{
 		InitF: func(context.Context) error {
-			primaryController1 := sqlEngine.GetUnderlyingEngine().Analyzer.Catalog.BinlogPrimaryController
-
-			// TODO: rename to doltBinlogPrimaryController
-			primaryController, ok := primaryController1.(*binlogreplication.DoltBinlogPrimaryController)
+			primaryController := sqlEngine.GetUnderlyingEngine().Analyzer.Catalog.BinlogPrimaryController
+			doltBinlogPrimaryController, ok := primaryController.(*binlogreplication.DoltBinlogPrimaryController)
 			if !ok {
 				panic("Found unexpected type of binlog controller!")
 			}
@@ -321,13 +319,13 @@ func ConfigureServices(
 			}
 			if logBin == 1 {
 				logrus.Debug("Enabling binary logging")
-				binlogProducer, err := binlogreplication.NewBinlogProducer(primaryController.StreamerManager())
+				binlogProducer, err := binlogreplication.NewBinlogProducer(doltBinlogPrimaryController.StreamerManager())
 				if err != nil {
 					return err
 				}
 				// NOTE: Hooks need to be applied AFTER this!
 				doltdb.RegisterDatabaseUpdateListener(binlogProducer)
-				primaryController.BinlogProducer = binlogProducer
+				doltBinlogPrimaryController.BinlogProducer = binlogProducer
 
 				// TODO: This is a mess! How to clean this up!
 				provider := sqlEngine.GetUnderlyingEngine().Analyzer.Catalog.DbProvider
@@ -339,8 +337,11 @@ func ConfigureServices(
 				// TODO: How do we feed the binlogStream and binlogFormat to the log manager?
 				//       Needs format to write the initial format event to the stream
 				//       Needs binlogStream to write the initial format event
-				logManager := binlogreplication.NewLogManager(fs, *binlogProducer.BinlogFormat(), binlogProducer.BinlogStream())
-				primaryController.StreamerManager().LogManager(logManager)
+				logManager, err := binlogreplication.NewLogManager(fs, *binlogProducer.BinlogFormat(), binlogProducer.BinlogStream())
+				if err != nil {
+					return err
+				}
+				doltBinlogPrimaryController.StreamerManager().LogManager(logManager)
 			}
 
 			_, logBinBranchValue, ok := sql.SystemVariables.GetGlobal("log_bin_branch")

@@ -90,7 +90,7 @@ func (d *DoltBinlogPrimaryController) ListBinaryLogs(ctx *sql.Context) error {
 func (d *DoltBinlogPrimaryController) GetBinaryLogStatus(ctx *sql.Context) ([]binlogreplication.BinaryLogStatus, error) {
 	return []binlogreplication.BinaryLogStatus{{
 		File:          d.streamerManager.logManager.currentBinlogFileName,
-		Position:      uint(d.BinlogProducer.binlogEventMeta.NextLogPosition),
+		Position:      uint(d.streamerManager.logManager.currentPosition),
 		ExecutedGtids: d.BinlogProducer.currentGtidPosition(),
 	}}, nil
 }
