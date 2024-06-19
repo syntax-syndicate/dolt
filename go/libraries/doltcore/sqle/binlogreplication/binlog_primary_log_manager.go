@@ -353,24 +353,13 @@ func (lm *LogManager) writeEventsHelper(binlogEvents ...mysql.BinlogEvent) error
 	return nil
 }
 
-func (lm *LogManager) resolveLogFile(filename string) (string, error) {
-	binlogBaseDir, err := lm.fs.Abs(binlogDirectory)
-	if err != nil {
-		return "", err
-	}
-
+func (lm *LogManager) resolveLogFile(filename string) string {
 	// TODO: Should we make sure it exists?
-	return filepath.Join(binlogBaseDir, filename), nil
+	return filepath.Join(lm.binlogDirectory, filename)
 }
 
 func (lm *LogManager) currentBinlogFilepath() string {
-	logFile, err := lm.resolveLogFile(lm.currentBinlogFileName)
-	if err != nil {
-		// TODO: return an error, or handle this err somewhere else where we do return an error
-		panic(err)
-	}
-
-	return logFile
+	return lm.resolveLogFile(lm.currentBinlogFileName)
 }
 
 // formatBinlogFilename formats a binlog filename using the specified |branch| and |sequence| number. The
