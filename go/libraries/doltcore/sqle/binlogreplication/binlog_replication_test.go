@@ -33,7 +33,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dolthub/vitess/go/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/require"
@@ -480,45 +479,6 @@ func waitForReplicaToCatchUp(t *testing.T) {
 	outputShowReplicaStatus(t)
 	//outputReplicaApplierStatus(t) // NOTE: This can only run aginst MySQL, not Dolt
 	t.Fatal("primary and replica did not synchronize within " + timeLimit.String())
-}
-
-// waitForReplicaToHaveLatestGtid waits (up to 10s) for the replica to contain the
-// most recent GTID executed from the primary. Both the primary and replica are queried
-// for the value of @@gtid_executed to determine if the replica contains the most recent
-// transaction from the primary.
-func waitForReplicaToHaveLatestGtid(t *testing.T) {
-	timeLimit := 10 * time.Second
-	endTime := time.Now().Add(timeLimit)
-	for time.Now().Before(endTime) {
-		replicaGtid := queryGtid(t, replicaDatabase)
-		primaryGtid := queryGtid(t, primaryDatabase)
-
-		replicaGtidSet, err := mysql.ParseMysql56GTIDSet(replicaGtid)
-		require.NoError(t, err)
-
-		idx := strings.Index(primaryGtid, ":")
-		require.True(t, idx > 0)
-		uuid := primaryGtid[:idx]
-		sequencePortion := primaryGtid[idx+1:]
-		if strings.Contains(sequencePortion, ":") {
-			sequencePortion = sequencePortion[strings.LastIndex(sequencePortion, ":")+1:]
-		}
-		if strings.Contains(sequencePortion, "-") {
-			sequencePortion = sequencePortion[strings.LastIndex(sequencePortion, "-")+1:]
-		}
-
-		latestGtid, err := mysql.ParseGTID("MySQL56", uuid+":"+sequencePortion)
-		require.NoError(t, err)
-
-		if replicaGtidSet.ContainsGTID(latestGtid) {
-			return
-		} else {
-			fmt.Printf("replica does not contain latest GTID from the primary yet... (primary: %s, replica: %s)\n", primaryGtid, replicaGtid)
-			time.Sleep(250 * time.Millisecond)
-		}
-	}
-
-	t.Fatal("replica did not synchronize the latest GTID from the primary within " + timeLimit.String())
 }
 
 // waitForReplicaToReachGtid waits (up to 10s) for the replica's @@gtid_executed sys var to show that

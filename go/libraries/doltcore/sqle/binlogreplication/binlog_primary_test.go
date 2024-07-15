@@ -328,7 +328,7 @@ func TestBinlogPrimary_ReplicaRestart(t *testing.T) {
 
 	// Create another table and assert that it gets replicated
 	primaryDatabase.MustExec("create table db01.t2 (pk int primary key, c1 varchar(255));")
-	waitForReplicaToHaveLatestGtid(t)
+	waitForReplicaToCatchUp(t)
 	requireReplicaResults(t, "show tables;", [][]any{{"t1"}, {"t2"}})
 
 	// Assert the executed GTID position now contains all GTIDs
