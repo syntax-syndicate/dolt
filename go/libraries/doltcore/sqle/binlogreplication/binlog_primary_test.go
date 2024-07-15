@@ -16,6 +16,8 @@ package binlogreplication
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -197,6 +199,51 @@ func TestBinlogPrimary_AutoPurging(t *testing.T) {
 	require.Contains(t, status["Last_IO_Error"],
 		"Got fatal error 1236 from source when reading data from binary log: "+
 			"'Cannot replicate because the source purged required binary logs.")
+}
+
+// TestBinlogPrimary_InitializeGTIDPurged asserts that @@gtid_purged is set correctly in a variety of
+// scenarios, such as when a fresh server starts up, or when a server is restarted multiple times.
+func TestBinlogPrimary_InitializeGTIDPurged(t *testing.T) {
+	defer teardown(t)
+	startSqlServersWithDoltSystemVars(t, doltReplicationPrimarySystemVars)
+	setupForDoltToMySqlReplication()
+
+	// On a fresh server, @@gtid_purged and @@gtid_executed should be empty
+	requirePrimaryResults(t, "SELECT @@gtid_executed;", [][]any{{""}})
+	requirePrimaryResults(t, "SELECT @@gtid_purged;", [][]any{{""}})
+
+	// Create a GTID in the first binary log file, and restart the server to rotate to a new binary log file
+	// After the first restart, @@gtid_purged should be empty and @@gtid_executed should be the first GTID
+	primaryDatabase.MustExec("CREATE DATABASE db01;")
+	stopDoltSqlServer(t)
+	mustRestartDoltPrimaryServer(t)
+	requirePrimaryResults(t, "SELECT @@gtid_executed;", [][]any{
+		{fmt.Sprintf("%s:1", queryPrimaryServerUuid(t))},
+	})
+	requirePrimaryResults(t, "SELECT @@gtid_purged;", [][]any{{""}})
+
+	// Manually remove the first binary log file, containing GTID 1 and restart the server
+	// When no GTID is found in any available logs, @@gtid_purged should be set to @@gtid_executed
+	require.NoError(t, os.Remove(filepath.Join(testDir, "dolt", ".dolt", "binlog", "binlog-main.000001")))
+	stopDoltSqlServer(t)
+	mustRestartDoltPrimaryServer(t)
+	requirePrimaryResults(t, "SELECT @@gtid_executed;", [][]any{
+		{fmt.Sprintf("%s:1", queryPrimaryServerUuid(t))},
+	})
+	requirePrimaryResults(t, "SELECT @@gtid_purged;", [][]any{
+		{fmt.Sprintf("%s:1", queryPrimaryServerUuid(t))},
+	})
+
+	// Create a new GTID in the current binary log file, restart, and test @@gtid_executed and @@gtid_purged
+	primaryDatabase.MustExec("CREATE DATABASE db02;")
+	stopDoltSqlServer(t)
+	mustRestartDoltPrimaryServer(t)
+	requirePrimaryResults(t, "SELECT @@gtid_executed;", [][]any{
+		{fmt.Sprintf("%s:1-2", queryPrimaryServerUuid(t))},
+	})
+	requirePrimaryResults(t, "SELECT @@gtid_purged;", [][]any{
+		{fmt.Sprintf("%s:1", queryPrimaryServerUuid(t))},
+	})
 }
 
 // TestBinlogPrimary_ReplicaAndPrimaryRestart tests that a replica can disconnect and reconnect to the primary to
