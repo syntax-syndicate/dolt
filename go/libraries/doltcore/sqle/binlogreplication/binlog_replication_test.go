@@ -74,6 +74,9 @@ func teardown(t *testing.T) {
 		printFile(doltLogFilePath)
 		fmt.Printf("\nMySQL server log from %s:\n", mysqlLogFilePath)
 		printFile(mysqlLogFilePath)
+		mysqlErrorLogFilePath := filepath.Join(filepath.Dir(mysqlLogFilePath), "error_log.err")
+		fmt.Printf("\nMySQL server error log from %s:\n", mysqlErrorLogFilePath)
+		printFile(mysqlErrorLogFilePath)
 	} else {
 		// clean up temp files on clean test runs
 		defer os.RemoveAll(testDir)
@@ -822,9 +825,8 @@ func startMySqlServer(dir string) (int, *os.Process, error) {
 		"--server-id=11223344",
 		fmt.Sprintf("--socket=mysql-%v.sock", mySqlPort),
 		"--general_log_file="+dir+"general_log",
-		"--log-bin="+dir+"log_bin",
 		"--slow_query_log_file="+dir+"slow_query_log",
-		"--log-error="+dir+"log_error",
+		"--log-error="+dir+"error_log",
 		fmt.Sprintf("--pid-file="+dir+"pid-%v.pid", mySqlPort))
 
 	mysqlLogFilePath = filepath.Join(dir, fmt.Sprintf("mysql-%d.out.log", time.Now().Unix()))
