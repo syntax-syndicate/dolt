@@ -1519,7 +1519,7 @@ func diffRows(
 		}
 	}
 
-	err = writeDiffResults(sqlCtx, sch, unionSch, rowIter, rowWriter, modifiedColNames, dArgs)
+	err = writeDiffResults(sqlCtx, fromSch, toSch, sch, unionSch, rowIter, rowWriter, modifiedColNames, dArgs)
 	if err != nil {
 		return errhand.BuildDError("Error running diff query:\n%s", interpolatedQuery).AddCause(err).Build()
 	}
@@ -1569,6 +1569,8 @@ func getColumnNames(fromTableInfo, toTableInfo *diff.TableInfo) (colNames []stri
 func writeDiffResults(
 	ctx *sql.Context,
 	diffQuerySch sql.Schema,
+	fromSch sql.Schema,
+	toSch sql.Schema,
 	targetSch sql.Schema,
 	iter sql.RowIter,
 	writer diff.SqlRowDiffWriter,
