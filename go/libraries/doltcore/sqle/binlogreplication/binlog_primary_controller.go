@@ -21,6 +21,7 @@ import (
 
 	"github.com/dolthub/go-mysql-server/sql"
 	"github.com/dolthub/go-mysql-server/sql/binlogreplication"
+	gmstypes "github.com/dolthub/go-mysql-server/sql/types"
 	"github.com/dolthub/vitess/go/mysql"
 	"github.com/sirupsen/logrus"
 )
@@ -62,14 +63,62 @@ func (d *DoltBinlogPrimaryController) RegisterReplica(ctx *sql.Context, c *mysql
 	return nil
 }
 
-// BinlogDumpGtid implements the BinlogPrimaryController interface.
-func (d *DoltBinlogPrimaryController) BinlogDumpGtid(ctx *sql.Context, conn *mysql.Conn, replicaExecutedGtids mysql.GTIDSet) error {
+// validateReplicationConfiguration checks that this server is properly configured to replicate databases, meaning
+// that @@log_bin is enabled, @@gtid_mode is enabled, @@enforce_gtid_consistency is enabled, and the binlog producer
+// has been instantiated. If any of this configuration is not valid, then an error is returned.
+func (d *DoltBinlogPrimaryController) validateReplicationConfiguration() *mysql.SQLError {
 	if d.BinlogProducer == nil {
-		// TODO: Add a test for this, now that we have errors being
-		//       reported in replica status correctly
 		return mysql.NewSQLError(mysql.ERMasterFatalReadingBinlog, "HY000",
 			"no binlog currently being recorded; make sure the server is started with @@log_bin enabled")
+	}
 
+	_, logBinValue, ok := sql.SystemVariables.GetGlobal("log_bin")
+	if !ok {
+		return mysql.NewSQLError(mysql.ERUnknownError, "HY000", "unable to find system variable @@log_bin")
+	}
+	logBin, _, err := gmstypes.Boolean.Convert(logBinValue)
+	if err != nil {
+		return mysql.NewSQLError(mysql.ERUnknownError, "HY000", err.Error())
+	}
+	if logBin.(int8) != 1 {
+		return mysql.NewSQLError(mysql.ERMasterFatalReadingBinlog, "HY000",
+			"no binlog currently being recorded; make sure the server is started with @@log_bin enabled")
+	}
+
+	_, gtidModeValue, ok := sql.SystemVariables.GetGlobal("gtid_mode")
+	if !ok {
+		return mysql.NewSQLError(mysql.ERUnknownError, "HY000", "unable to find system variable @@log_bin")
+	}
+	gtidMode, ok := gtidModeValue.(string)
+	if !ok {
+		return mysql.NewSQLError(mysql.ERUnknownError, "HY000", "unexpected type for @@gtid_mode: %T", gtidModeValue)
+	}
+	if gtidMode != "ON" {
+		return mysql.NewSQLError(mysql.ERMasterFatalReadingBinlog, "HY000",
+			"@@gtid_mode must be enabled for binlog replication")
+	}
+
+	_, enforceGtidConsistencyValue, ok := sql.SystemVariables.GetGlobal("enforce_gtid_consistency")
+	if !ok {
+		return mysql.NewSQLError(mysql.ERUnknownError, "HY000", "unable to find system variable @@log_bin")
+	}
+	enforceGtidConsistency, ok := enforceGtidConsistencyValue.(string)
+	if !ok {
+		return mysql.NewSQLError(mysql.ERUnknownError, "HY000",
+			"unexpected type for @@enforce_gtid_consistency: %T", enforceGtidConsistencyValue)
+	}
+	if enforceGtidConsistency != "ON" {
+		return mysql.NewSQLError(mysql.ERMasterFatalReadingBinlog, "HY000",
+			"@@enforce_gtid_consistency must be enabled for binlog replication")
+	}
+
+	return nil
+}
+
+// BinlogDumpGtid implements the BinlogPrimaryController interface.
+func (d *DoltBinlogPrimaryController) BinlogDumpGtid(ctx *sql.Context, conn *mysql.Conn, replicaExecutedGtids mysql.GTIDSet) error {
+	if err := d.validateReplicationConfiguration(); err != nil {
+		return err
 	}
 
 	primaryExecutedGtids := d.BinlogProducer.gtidPosition.GTIDSet
@@ -103,6 +152,10 @@ func (d *DoltBinlogPrimaryController) ListReplicas(ctx *sql.Context) error {
 // ListBinaryLogs implements the BinlogPrimaryController interface.
 func (d *DoltBinlogPrimaryController) ListBinaryLogs(_ *sql.Context) ([]binlogreplication.BinaryLogFileMetadata, error) {
 	logManager := d.streamerManager.logManager
+	if logManager == nil {
+		return nil, nil
+	}
+
 	logFiles, err := logManager.logFilesOnDiskForBranch(BinlogBranch)
 	if err != nil {
 		return nil, err
@@ -124,6 +177,10 @@ func (d *DoltBinlogPrimaryController) ListBinaryLogs(_ *sql.Context) ([]binlogre
 
 // GetBinaryLogStatus implements the BinlogPrimaryController interface.
 func (d *DoltBinlogPrimaryController) GetBinaryLogStatus(ctx *sql.Context) ([]binlogreplication.BinaryLogStatus, error) {
+	if d.BinlogProducer == nil {
+		return nil, nil
+	}
+
 	return []binlogreplication.BinaryLogStatus{{
 		File:          d.streamerManager.logManager.currentBinlogFileName,
 		Position:      uint(d.streamerManager.logManager.currentPosition),
