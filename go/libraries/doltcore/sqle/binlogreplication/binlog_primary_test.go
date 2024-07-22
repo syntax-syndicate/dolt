@@ -492,6 +492,34 @@ func TestBinlogPrimary_PrimaryRestart(t *testing.T) {
 	require.Equal(t, serverUuid+":1-3", status["Executed_Gtid_Set"])
 }
 
+// TestBinlogPrimary_PrimaryRestartBeforeReplicaConnects tests that a MySQL replica can connect to a Dolt primary
+// when the Dolt primary has multiple binlog files and the replica needs events from a non-current binlog file.
+func TestBinlogPrimary_PrimaryRestartBeforeReplicaConnects(t *testing.T) {
+	defer teardown(t)
+	startSqlServersWithDoltSystemVars(t, doltReplicationPrimarySystemVars)
+	setupForDoltToMySqlReplication()
+
+	// Create a test database to trigger the first GTID binlog event
+	primaryDatabase.MustExec("CREATE DATABASE db02;")
+
+	// Restart the Dolt primary server to trigger a binlog file rotation
+	stopDoltSqlServer(t)
+	mustRestartDoltPrimaryServer(t)
+
+	// Start replication and verify the replica receives the CREATE DATABASE event from the first binlog file
+	startReplication(t, doltPort)
+	waitForReplicaToCatchUp(t)
+	requireReplicaResults(t, "SHOW DATABASES;", [][]any{
+		{"db02"}, {"information_schema"}, {"mysql"}, {"performance_schema"}, {"sys"},
+	})
+
+	// Verify that the Dolt primary server has two binary log files
+	requirePrimaryResults(t, "SHOW BINARY LOGS;", [][]any{
+		{"binlog-main.000001", "312", "No"},
+		{"binlog-main.000002", "191", "No"},
+	})
+}
+
 // TestBinlogPrimary_ChangeReplicationBranch asserts that the log_bin_branch system variable can
 // be used to control what branch is replicated.
 func TestBinlogPrimary_ChangeReplicationBranch(t *testing.T) {

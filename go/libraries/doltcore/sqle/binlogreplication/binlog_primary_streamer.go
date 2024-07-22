@@ -222,7 +222,9 @@ func (m *binlogStreamerManager) copyStreamers() []*binlogStreamer {
 // StartStream starts a new binlogStreamer and streams events over |conn| until the connection
 // is closed, the streamer is sent a quit signal over its quit channel, or the streamer receives
 // errors while sending events over the connection. Note that this method blocks until the
-// streamer exits.
+// streamer exits. Note that this function does NOT validate that the primary has the correct set
+// of GTIDs available to get the replica in sync with the primary – it is expected for that
+// validation to have been completed before starting a binlog stream.
 func (m *binlogStreamerManager) StartStream(ctx *sql.Context, conn *mysql.Conn, executedGtids mysql.GTIDSet, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {
 	streamer := newBinlogStreamer()
 	m.addStreamer(streamer)
@@ -239,14 +241,13 @@ func (m *binlogStreamerManager) StartStream(ctx *sql.Context, conn *mysql.Conn, 
 		return err
 	}
 
-	// TODO: We also need to handle cases where we are missing GTIDs that the replica doesn't have yet. In these
-	//       cases we need to send errors back to the replica.
 	return streamer.startStream(ctx, conn, executedGtids, binlogFormat, binlogEventMeta, file)
 }
 
-// findLogFileForPosition searches through the binlog files on disk for the first log file that contains GTIDs that
-// are not present in |executedGtids|. This is determined by reading the first GTID event from each log file and
-// selecting the previous file when the first GTID not in |executedGtids| is found.
+// findLogFileForPosition searches through the available binlog files on disk for the first log file that
+// contains GTIDs that are NOT present in |executedGtids|. This is determined by reading the first GTID event
+// from each log file and selecting the previous file when the first GTID not in |executedGtids| is found. If
+// the first GTID event in all available logs files is in |executedGtids|, then the current log file is returned.
 func (m *binlogStreamerManager) findLogFileForPosition(executedGtids mysql.GTIDSet) (string, error) {
 	files, err := m.logManager.logFilesOnDiskForBranch(BinlogBranch)
 	if err != nil {
@@ -254,13 +255,16 @@ func (m *binlogStreamerManager) findLogFileForPosition(executedGtids mysql.GTIDS
 	}
 
 	for i, f := range files {
-		file, err := openBinlogFileForReading(filepath.Join(m.logManager.binlogDirectory, f))
+		binlogFilePath := filepath.Join(m.logManager.binlogDirectory, f)
+		file, err := openBinlogFileForReading(binlogFilePath)
 		if err != nil {
 			return "", err
 		}
 
 		binlogEvent, err := readFirstGtidEventFromFile(file)
-		file.Close()
+		if fileCloseErr := file.Close(); fileCloseErr != nil {
+			logrus.Errorf("unable to cleanly close binlog file %s: %s", f, err.Error())
+		}
 		if err == io.EOF {
 			continue
 		} else if err != nil {
@@ -278,19 +282,19 @@ func (m *binlogStreamerManager) findLogFileForPosition(executedGtids mysql.GTIDS
 				continue
 			}
 
+			// If we found an unexecuted GTID in the first binlog file, return the first file,
+			// otherwise return the previous file
 			if i == 0 {
-				return m.logManager.currentBinlogFilepath(), nil
+				return binlogFilePath, nil
+			} else {
+				return filepath.Join(m.logManager.binlogDirectory, files[i-1]), nil
 			}
-			return filepath.Join(m.logManager.binlogDirectory, files[i-1]), nil
 		}
 	}
 
-	// TODO: If we didn't find an unexecuted GTID in any of the files, just return
-	//       the current log file. This is a bit of a hack, but it's enough to
-	//       keep the following tests passing:
-	//         TestBinlogPrimary_ChangeReplicationBranch
-	//         TestBinlogPrimary_PrimaryRestart
-	//       It might actually be better to just return the first available log file?
+	// If we don't find any GTIDs that are missing from |executedGtids|, then return the current
+	// log file so the streamer can reply events from it, potentially finding GTIDs later in the
+	// file that need to be sent to the connected replica, or waiting for new events to be written.
 	return m.logManager.currentBinlogFilepath(), nil
 }
 
