@@ -319,29 +319,24 @@ func ConfigureServices(
 			}
 			if logBin == 1 {
 				logrus.Debug("Enabling binary logging")
-				binlogProducer, err := binlogreplication.NewBinlogProducer(dEnv.FS, doltBinlogPrimaryController.StreamerManager())
+				logManager, err := binlogreplication.NewLogManager(fs)
 				if err != nil {
 					return err
 				}
-				// NOTE: Hooks need to be applied AFTER this!
+
+				binlogProducer, err := binlogreplication.NewBinlogProducer(dEnv.FS, logManager)
+				if err != nil {
+					return err
+				}
 				doltdb.RegisterDatabaseUpdateListener(binlogProducer)
 				doltBinlogPrimaryController.BinlogProducer = binlogProducer
 
-				// TODO: This is a mess! How to clean this up!
+				// Register binlog hooks for database creation/deletion
 				provider := sqlEngine.GetUnderlyingEngine().Analyzer.Catalog.DbProvider
 				if doltProvider, ok := provider.(*sqle.DoltDatabaseProvider); ok {
 					doltProvider.AddInitDatabaseHook(binlogreplication.NewBinlogInitDatabaseHook(nil, doltdb.DatabaseUpdateListeners))
 					doltProvider.AddDropDatabaseHook(binlogreplication.NewBinlogDropDatabaseHook(nil, doltdb.DatabaseUpdateListeners))
 				}
-
-				// TODO: How do we feed the binlogStream and binlogFormat to the log manager?
-				//       Needs format to write the initial format event to the stream
-				//       Needs binlogStream to write the initial format event
-				logManager, err := binlogreplication.NewLogManager(fs, *binlogProducer.BinlogFormat(), binlogProducer.BinlogStream())
-				if err != nil {
-					return err
-				}
-				doltBinlogPrimaryController.StreamerManager().LogManager(logManager)
 			}
 
 			_, logBinBranchValue, ok := sql.SystemVariables.GetGlobal("log_bin_branch")

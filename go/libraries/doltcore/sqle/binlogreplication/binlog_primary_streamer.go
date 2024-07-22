@@ -93,9 +93,6 @@ func (streamer *binlogStreamer) startStream(_ *sql.Context, conn *mysql.Conn, ex
 		default:
 			logrus.Debug("checking file for new data...")
 			skippingGtids := false
-			// TODO: This for loop is nested in side a select block, inside another for loop
-			//       We should be able to get rid of this inner for loop, otherwise the select
-			//       block won't ever let us read from ticker or quitChan
 			for {
 				binlogEvent, err := readBinlogEventFromFile(file)
 				if err == io.EOF {
@@ -230,12 +227,6 @@ func (m *binlogStreamerManager) StartStream(ctx *sql.Context, conn *mysql.Conn, 
 	m.addStreamer(streamer)
 	defer m.removeStreamer(streamer)
 
-	// TODO: This may be a little tricky with branch switching... perhaps we should destroy the index when we
-	//       switch branches and rebuild it as we create more logs?
-	//       It seems like part of the contract with switching branches for replication is that the primary will
-	//       invalidate/destroy all the previous binlog files? It doesn't seem safe to rely on them being
-	//       correct after changing the branch back and forth.
-
 	file, err := m.findLogFileForPosition(executedGtids)
 	if err != nil {
 		return err
@@ -356,12 +347,6 @@ func (m *binlogStreamerManager) removeStreamer(streamer *binlogStreamer) {
 			m.streamers = append(m.streamers, element)
 		}
 	}
-}
-
-// LogManager sets the LogManager this streamer manager will work with to find
-// and read from binlog files.
-func (m *binlogStreamerManager) LogManager(manager *LogManager) {
-	m.logManager = manager
 }
 
 func sendHeartbeat(conn *mysql.Conn, binlogFormat *mysql.BinlogFormat, binlogEventMeta mysql.BinlogEventMetadata) error {

@@ -62,7 +62,6 @@ func TestBinlogPrimary_BinlogNotEnabled(t *testing.T) {
 // attempting to start replication will fail with an error visible in the replica's status.
 func TestBinlogPrimary_GtidModeNotEnabled(t *testing.T) {
 	defer teardown(t)
-	// TODO: How about other values for GTID_MODE? Like ON_PERMISSIVE? Those should still work, right?
 	startSqlServersWithDoltSystemVars(t, map[string]string{"log_bin": "1"})
 	setupForDoltToMySqlReplication()
 

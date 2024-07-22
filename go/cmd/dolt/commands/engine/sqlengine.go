@@ -347,7 +347,6 @@ func configureBinlogReplicaController(config *SqlEngineConfig, engine *gms.Engin
 func configureBinlogPrimaryController(engine *gms.Engine) error {
 	primaryController := dblr.NewDoltBinlogPrimaryController()
 	engine.Analyzer.Catalog.BinlogPrimaryController = primaryController
-
 	return nil
 }
 

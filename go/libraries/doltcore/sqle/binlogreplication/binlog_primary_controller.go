@@ -38,14 +38,9 @@ var _ binlogreplication.BinlogPrimaryController = (*DoltBinlogPrimaryController)
 
 // NewDoltBinlogPrimaryController creates a new DoltBinlogPrimaryController instance.
 func NewDoltBinlogPrimaryController() *DoltBinlogPrimaryController {
-	controller := DoltBinlogPrimaryController{
+	return &DoltBinlogPrimaryController{
 		streamerManager: newBinlogStreamerManager(),
 	}
-	return &controller
-}
-
-func (d *DoltBinlogPrimaryController) StreamerManager() *binlogStreamerManager {
-	return d.streamerManager
 }
 
 // RegisterReplica implements the BinlogPrimaryController interface.
@@ -122,9 +117,7 @@ func (d *DoltBinlogPrimaryController) BinlogDumpGtid(ctx *sql.Context, conn *mys
 	}
 
 	primaryExecutedGtids := d.BinlogProducer.gtidPosition.GTIDSet
-	// TODO: This is awkward... should controller have a direct link to log manager?
-	//       Or should BinlogProducer have a direct link to the log manager?
-	missingGtids := d.BinlogProducer.streamerManager.logManager.calculateMissingGtids(replicaExecutedGtids, primaryExecutedGtids)
+	missingGtids := d.BinlogProducer.logManager.calculateMissingGtids(replicaExecutedGtids, primaryExecutedGtids)
 	if !missingGtids.Equal(mysql.Mysql56GTIDSet{}) {
 		// We must send back error code 1236 (ER_MASTER_FATAL_ERROR_READING_BINLOG) to the replica to signal an error,
 		// otherwise the replica won't expose the error in replica status and will just keep trying to reconnect and
@@ -151,7 +144,7 @@ func (d *DoltBinlogPrimaryController) ListReplicas(ctx *sql.Context) error {
 
 // ListBinaryLogs implements the BinlogPrimaryController interface.
 func (d *DoltBinlogPrimaryController) ListBinaryLogs(_ *sql.Context) ([]binlogreplication.BinaryLogFileMetadata, error) {
-	logManager := d.streamerManager.logManager
+	logManager := d.BinlogProducer.logManager
 	if logManager == nil {
 		return nil, nil
 	}
@@ -176,14 +169,14 @@ func (d *DoltBinlogPrimaryController) ListBinaryLogs(_ *sql.Context) ([]binlogre
 }
 
 // GetBinaryLogStatus implements the BinlogPrimaryController interface.
-func (d *DoltBinlogPrimaryController) GetBinaryLogStatus(ctx *sql.Context) ([]binlogreplication.BinaryLogStatus, error) {
-	if d.BinlogProducer == nil {
+func (d *DoltBinlogPrimaryController) GetBinaryLogStatus(_ *sql.Context) ([]binlogreplication.BinaryLogStatus, error) {
+	if d.BinlogProducer == nil || d.BinlogProducer.logManager == nil {
 		return nil, nil
 	}
 
 	return []binlogreplication.BinaryLogStatus{{
-		File:          d.streamerManager.logManager.currentBinlogFileName,
-		Position:      uint(d.streamerManager.logManager.currentPosition),
+		File:          d.BinlogProducer.logManager.currentBinlogFileName,
+		Position:      uint(d.BinlogProducer.logManager.currentPosition),
 		ExecutedGtids: d.BinlogProducer.currentGtidPosition(),
 	}}, nil
 }
