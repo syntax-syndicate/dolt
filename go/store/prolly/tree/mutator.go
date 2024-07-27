@@ -38,15 +38,15 @@ type MutationIter interface {
 //     track key indexes in the old keyspace. The first tracks where
 //     a new edit will be applied relative to the old keyspace.
 //     The second indicates the most recent edit in the new tree
-//     relative to the old keyspace. The second cursor is embedded in
+//     relative to the old keyspace. The second Cursor is embedded in
 //     the chunker, maintained by the chunker, and necessary precedes
 //     the first.
 //
 //   - For every edit, first identify the key index in the old keyspace
-//     where the edit will be applied, and move the tracking cursor to
+//     where the edit will be applied, and move the tracking Cursor to
 //     that index.
 //
-//   - Advance the chunker and the second cursor to the new edit point.
+//   - Advance the chunker and the second Cursor to the new edit point.
 //     Refer to the chunker.AdvanceTo docstring for details.
 //
 //   - Add the edit to the chunker. This applies the edit to the in-progress
@@ -69,7 +69,7 @@ func ApplyMutations[K ~[]byte, O Ordering[K], S message.Serializer](
 		return root, nil // no mutations
 	}
 
-	cur, err := newCursorAtKey(ctx, ns, root, K(newKey), order)
+	cur, err := NewCursorAtKey(ctx, ns, root, K(newKey), order)
 	if err != nil {
 		return Node{}, err
 	}
@@ -90,9 +90,9 @@ func ApplyMutations[K ~[]byte, O Ordering[K], S message.Serializer](
 		var oldValue Item
 		if cur.Valid() {
 			// Compare mutations |newKey| and |newValue|
-			// to the existing pair from the cursor
+			// to the existing pair from the Cursor
 			if order.Compare(K(newKey), K(cur.CurrentKey())) == 0 {
-				oldValue = cur.currentValue()
+				oldValue = cur.CurrentValue()
 			}
 
 			// check for no-op mutations

@@ -41,8 +41,8 @@ type DiffFn func(context.Context, Diff) error
 // is useful in cases where the schema has changed and we want to consider a leaf changed even if the byte representation
 // of the leaf is the same.
 type Differ[K ~[]byte, O Ordering[K]] struct {
-	from, to                *cursor
-	fromStop, toStop        *cursor
+	from, to                *Cursor
+	fromStop, toStop        *Cursor
 	order                   O
 	considerAllRowsModified bool
 }
@@ -54,7 +54,7 @@ func DifferFromRoots[K ~[]byte, O Ordering[K]](
 	order O,
 	considerAllRowsModified bool,
 ) (Differ[K, O], error) {
-	var fc, tc *cursor
+	var fc, tc *Cursor
 	var err error
 
 	if !from.empty() {
@@ -63,7 +63,7 @@ func DifferFromRoots[K ~[]byte, O Ordering[K]](
 			return Differ[K, O]{}, err
 		}
 	} else {
-		fc = &cursor{}
+		fc = &Cursor{}
 	}
 
 	if !to.empty() {
@@ -72,7 +72,7 @@ func DifferFromRoots[K ~[]byte, O Ordering[K]](
 			return Differ[K, O]{}, err
 		}
 	} else {
-		tc = &cursor{}
+		tc = &Cursor{}
 	}
 
 	fs, err := newCursorPastEnd(ctx, fromNs, from)
@@ -142,8 +142,8 @@ func (td Differ[K, O]) Next(ctx context.Context) (diff Diff, err error) {
 			return sendAdded(ctx, td.to)
 
 		case cmp == 0:
-			// If the cursor schema has changed, then all rows should be considered modified.
-			// If the cursor schema hasn't changed, rows are modified iff their bytes have changed.
+			// If the Cursor schema has changed, then all rows should be considered modified.
+			// If the Cursor schema hasn't changed, rows are modified iff their bytes have changed.
 			if td.considerAllRowsModified || !equalcursorValues(td.from, td.to) {
 				return sendModified(ctx, td.from, td.to)
 			}
@@ -175,11 +175,11 @@ func (td Differ[K, O]) Next(ctx context.Context) (diff Diff, err error) {
 	return Diff{}, io.EOF
 }
 
-func sendRemoved(ctx context.Context, from *cursor) (diff Diff, err error) {
+func sendRemoved(ctx context.Context, from *Cursor) (diff Diff, err error) {
 	diff = Diff{
 		Type: RemovedDiff,
 		Key:  from.CurrentKey(),
-		From: from.currentValue(),
+		From: from.CurrentValue(),
 	}
 
 	if err = from.advance(ctx); err != nil {
@@ -188,11 +188,11 @@ func sendRemoved(ctx context.Context, from *cursor) (diff Diff, err error) {
 	return
 }
 
-func sendAdded(ctx context.Context, to *cursor) (diff Diff, err error) {
+func sendAdded(ctx context.Context, to *Cursor) (diff Diff, err error) {
 	diff = Diff{
 		Type: AddedDiff,
 		Key:  to.CurrentKey(),
-		To:   to.currentValue(),
+		To:   to.CurrentValue(),
 	}
 
 	if err = to.advance(ctx); err != nil {
@@ -201,12 +201,12 @@ func sendAdded(ctx context.Context, to *cursor) (diff Diff, err error) {
 	return
 }
 
-func sendModified(ctx context.Context, from, to *cursor) (diff Diff, err error) {
+func sendModified(ctx context.Context, from, to *Cursor) (diff Diff, err error) {
 	diff = Diff{
 		Type: ModifiedDiff,
 		Key:  from.CurrentKey(),
-		From: from.currentValue(),
-		To:   to.currentValue(),
+		From: from.CurrentValue(),
+		To:   to.CurrentValue(),
 	}
 
 	if err = from.advance(ctx); err != nil {
@@ -218,7 +218,7 @@ func sendModified(ctx context.Context, from, to *cursor) (diff Diff, err error) 
 	return
 }
 
-func skipCommon(ctx context.Context, from, to *cursor) (err error) {
+func skipCommon(ctx context.Context, from, to *Cursor) (err error) {
 	// track when |from.parent| and |to.parent| change
 	// to avoid unnecessary comparisons.
 	parentsAreNew := true
@@ -257,7 +257,7 @@ func skipCommon(ctx context.Context, from, to *cursor) (err error) {
 	return err
 }
 
-func skipCommonParents(ctx context.Context, from, to *cursor) (err error) {
+func skipCommonParents(ctx context.Context, from, to *Cursor) (err error) {
 	err = skipCommon(ctx, from.parent, to.parent)
 	if err != nil {
 		return err
@@ -285,18 +285,18 @@ func skipCommonParents(ctx context.Context, from, to *cursor) (err error) {
 }
 
 // todo(andy): assumes equal byte representations
-func equalItems(from, to *cursor) bool {
+func equalItems(from, to *Cursor) bool {
 	return bytes.Equal(from.CurrentKey(), to.CurrentKey()) &&
-		bytes.Equal(from.currentValue(), to.currentValue())
+		bytes.Equal(from.CurrentValue(), to.CurrentValue())
 }
 
-func equalParents(from, to *cursor) (eq bool) {
+func equalParents(from, to *Cursor) (eq bool) {
 	if from.parent != nil && to.parent != nil {
 		eq = equalItems(from.parent, to.parent)
 	}
 	return
 }
 
-func equalcursorValues(from, to *cursor) bool {
-	return bytes.Equal(from.currentValue(), to.currentValue())
+func equalcursorValues(from, to *Cursor) bool {
+	return bytes.Equal(from.CurrentValue(), to.CurrentValue())
 }

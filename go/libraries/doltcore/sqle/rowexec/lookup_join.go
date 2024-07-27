@@ -16,6 +16,7 @@ package rowexec
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -116,18 +117,28 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 			//   (3) initialize secondary iterator with |dstKey|
 			l.returnedARow = false
 
-			l.srcKey, l.srcVal, err = l.srcIter.Next(ctx)
+			var srcBuf val.Tuple
+			l.dstKey, srcBuf, err = l.srcIter.Next(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if l.srcKey == nil {
+
+			if srcBuf == nil {
 				return nil, io.EOF
 			}
 
-			l.dstKey, err = l.keyTupleMapper.dstKeyTuple(ctx, l.srcKey, l.srcVal)
-			if err != nil {
-				return nil, err
-			}
+			keyLen := binary.BigEndian.Uint32(srcBuf[:4])
+			srcBuf = srcBuf[4:]
+			l.srcKey = srcBuf[:keyLen]
+			srcBuf = srcBuf[keyLen:]
+			l.srcVal = srcBuf[:]
+			//l.dstKey, err = l.keyTupleMapper.dstKeyTuple(ctx, l.srcKey, l.srcVal)
+			//if err != nil {
+			//	return nil, err
+			//}
+			//if l.srcKey == nil {
+			//	return nil, io.EOF
+			//}
 
 			l.dstIter, err = l.dstIterGen.New(ctx, l.dstKey)
 			if err != nil {
@@ -139,6 +150,11 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
+
+		//fmt.Println("dstKey", l.dstIterGen.OutputKeyDesc().Format(dstKey))
+		//fmt.Println("dstVal", l.dstIterGen.OutputValDesc().Format(dstVal))
+		//fmt.Println("srcKey", l.keyTupleMapper.srcKd.Format(l.srcKey))
+		//fmt.Println("srcVal", l.keyTupleMapper.srcVd.Format(l.srcVal))
 
 		if dstKey == nil {
 			l.dstIter = nil

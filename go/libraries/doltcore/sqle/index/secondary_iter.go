@@ -50,6 +50,7 @@ type covStrictSecondaryLookupGen struct {
 	k, v       val.Tuple
 	prefixDesc val.TupleDesc
 	index      *doltIndex
+	cursor     *tree.Cursor
 }
 
 var _ SecondaryLookupIterGen = (*covStrictSecondaryLookupGen)(nil)
@@ -82,15 +83,29 @@ func (c *covStrictSecondaryLookupGen) New(ctx context.Context, k val.Tuple) (pro
 			return nil, nil
 		}
 	}
-	iter := &strictLookupIter{}
-	if err := c.m.GetPrefix(ctx, k, c.prefixDesc, func(key val.Tuple, value val.Tuple) error {
-		iter.k = key
-		iter.v = value
-		return nil
-	}); err != nil {
+
+	if c.cursor == nil {
+		var err error
+		c.cursor, err = tree.NewCursorAtKey(ctx, c.NodeStore(), c.m.Node(), k, c.prefixDesc)
+		if err != nil {
+			return nil, err
+		}
+	} else if err := tree.Seek(ctx, c.cursor, k, c.prefixDesc); err != nil {
 		return nil, err
 	}
+
+	iter := &strictLookupIter{k: val.Tuple(c.cursor.CurrentKey()), v: val.Tuple(c.cursor.CurrentValue())}
 	return iter, nil
+
+	//iter := &strictLookupIter{}
+	//if err := c.m.GetPrefix(ctx, k, c.prefixDesc, func(key val.Tuple, value val.Tuple) error {
+	//	iter.k = key
+	//	iter.v = value
+	//	return nil
+	//}); err != nil {
+	//	return nil, err
+	//}
+	//return iter, nil
 }
 
 type nonCovStrictSecondaryLookupGen struct {

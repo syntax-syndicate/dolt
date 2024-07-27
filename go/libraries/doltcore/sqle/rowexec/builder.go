@@ -51,6 +51,7 @@ func (b Builder) Build(ctx *sql.Context, n sql.Node, r sql.Row) (sql.RowIter, er
 							split := len(srcTags)
 							projections := append(srcTags, dstTags...)
 							rowJoiner := newRowJoiner([]schema.Schema{srcSchema, dstIter.Schema()}, []int{split}, projections, dstIter.NodeStore())
+							srcIter = newSortedLookupSource(srcIter, keyLookupMapper)
 							return rowIterTableLookupJoin(srcIter, dstIter, keyLookupMapper, rowJoiner, srcFilter, dstFilter, n.Filter, n.Op.IsLeftOuter(), n.Op.IsExcludeNulls())
 						}
 					}

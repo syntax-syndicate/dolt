@@ -20,17 +20,17 @@ import (
 	"io"
 )
 
-// JsonCursor wraps a cursor to an IndexedJsonDocument stored in a prolly tree. This allows seeking for a specific
+// JsonCursor wraps a Cursor to an IndexedJsonDocument stored in a prolly tree. This allows seeking for a specific
 // location in the stored JSON document.
 type JsonCursor struct {
-	cur         *cursor
+	cur         *Cursor
 	jsonScanner JsonScanner
 }
 
-// getPreviousKey computes the key of a cursor's predecessor node. This is important for scanning JSON because that
+// getPreviousKey computes the key of a Cursor's predecessor node. This is important for scanning JSON because that
 // key represents the location within the document where the current node begins, and can be used to compute the location
 // of every value within the node.
-func getPreviousKey(ctx context.Context, cur *cursor) ([]byte, error) {
+func getPreviousKey(ctx context.Context, cur *Cursor) ([]byte, error) {
 	cur2 := cur.clone()
 	err := cur2.retreat(ctx)
 	if err != nil {
@@ -53,7 +53,7 @@ func getPreviousKey(ctx context.Context, cur *cursor) ([]byte, error) {
 // in the document. If the location does not exist in the document, the resulting JsonCursor
 // will be at the location where the value would be if it was inserted.
 func newJsonCursor(ctx context.Context, ns NodeStore, root Node, startKey jsonLocation, forRemoval bool) (jCur *JsonCursor, found bool, err error) {
-	cur, err := newCursorAtKey(ctx, ns, root, startKey.key, jsonLocationOrdering{})
+	cur, err := NewCursorAtKey(ctx, ns, root, startKey.key, jsonLocationOrdering{})
 	if err != nil {
 		return nil, false, err
 	}
@@ -61,7 +61,7 @@ func newJsonCursor(ctx context.Context, ns NodeStore, root Node, startKey jsonLo
 	if err != nil {
 		return nil, false, err
 	}
-	jsonBytes := cur.currentValue()
+	jsonBytes := cur.CurrentValue()
 	jsonDecoder := ScanJsonFromMiddleWithKey(jsonBytes, previousKey)
 
 	jcur := JsonCursor{cur: cur, jsonScanner: jsonDecoder}
@@ -81,7 +81,7 @@ func (j JsonCursor) Valid() bool {
 // Precondition: The scanner is currently at the start of a value.
 func (j *JsonCursor) NextValue(ctx context.Context) (result []byte, err error) {
 	if !j.jsonScanner.atStartOfValue() {
-		return nil, fmt.Errorf("JSON cursor in unexpected state. This is likely a bug")
+		return nil, fmt.Errorf("JSON Cursor in unexpected state. This is likely a bug")
 	}
 	path := j.jsonScanner.currentPath.Clone()
 	path.setScannerState(endOfValue)
@@ -125,11 +125,11 @@ func (j *JsonCursor) isKeyInChunk(path jsonLocation) bool {
 	return compareJsonLocations(path, nodeEndPosition) <= 0
 }
 
-// AdvanceToLocation causes the cursor to advance to the specified position. This function returns a boolean indicating
-// whether the position already exists. If it doesn't, the cursor stops at the location where the value would be if it
+// AdvanceToLocation causes the Cursor to advance to the specified position. This function returns a boolean indicating
+// whether the position already exists. If it doesn't, the Cursor stops at the location where the value would be if it
 // were inserted.
 // The `forRemoval` parameter changes the behavior when advancing to the start of an object key. When this parameter is true,
-// the cursor advances to the end of the previous value, prior to the object key. This allows the key to be removed along
+// the Cursor advances to the end of the previous value, prior to the object key. This allows the key to be removed along
 // with the value.
 func (j *JsonCursor) AdvanceToLocation(ctx context.Context, path jsonLocation, forRemoval bool) (found bool, err error) {
 	if !j.isKeyInChunk(path) {
@@ -146,7 +146,7 @@ func (j *JsonCursor) AdvanceToLocation(ctx context.Context, path jsonLocation, f
 		if err != nil {
 			return false, err
 		}
-		j.jsonScanner = ScanJsonFromMiddleWithKey(j.cur.currentValue(), previousKey)
+		j.jsonScanner = ScanJsonFromMiddleWithKey(j.cur.CurrentValue(), previousKey)
 	}
 
 	previousScanner := j.jsonScanner
@@ -163,7 +163,7 @@ func (j *JsonCursor) AdvanceToLocation(ctx context.Context, path jsonLocation, f
 		}
 		cmp = compareJsonLocations(j.jsonScanner.currentPath, path)
 	}
-	// If the supplied path doesn't exist in the document, then we want to stop the cursor at the start of the point
+	// If the supplied path doesn't exist in the document, then we want to stop the Cursor at the start of the point
 	// were it would appear. This may mean that we've gone too far and need to rewind one location.
 	if cmp > 0 {
 		j.jsonScanner = previousScanner
@@ -189,7 +189,7 @@ func (j *JsonCursor) AdvanceToNextLocation(ctx context.Context) (crossedBoundary
 			// We hit the end of the tree. This shouldn't happen.
 			return true, io.EOF
 		}
-		j.jsonScanner = ScanJsonFromMiddle(j.cur.currentValue(), j.jsonScanner.currentPath)
+		j.jsonScanner = ScanJsonFromMiddle(j.cur.CurrentValue(), j.jsonScanner.currentPath)
 		return true, j.jsonScanner.AdvanceToNextLocation()
 	} else if err != nil {
 		return

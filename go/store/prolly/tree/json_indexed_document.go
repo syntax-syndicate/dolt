@@ -288,7 +288,7 @@ func (i IndexedJsonDocument) insertIntoCursor(ctx context.Context, keyPath jsonL
 		return nil, false, err
 	}
 
-	// The key is guaranteed to not exist in the source doc. The cursor is pointing to the start of the subsequent object,
+	// The key is guaranteed to not exist in the source doc. The Cursor is pointing to the start of the subsequent object,
 	// which will be the insertion point for the added value.
 	jsonChunker, err := newJsonChunker(ctx, jsonCursor, i.m.NodeStore)
 	if err != nil {
@@ -353,7 +353,7 @@ func (i IndexedJsonDocument) tryRemove(ctx context.Context, path string) (types.
 		return i, false, nil
 	}
 
-	// The cursor is now pointing to the end of the value prior to the one being removed.
+	// The Cursor is now pointing to the end of the value prior to the one being removed.
 	jsonChunker, err := newJsonChunker(ctx, jsonCursor, i.m.NodeStore)
 	if err != nil {
 		return nil, false, err
@@ -363,7 +363,7 @@ func (i IndexedJsonDocument) tryRemove(ctx context.Context, path string) (types.
 	startofRemovedLocation = startofRemovedLocation.Clone()
 	isInitialElement := startofRemovedLocation.getScannerState().isInitialElement()
 
-	// Advance the cursor to the end of the value being removed.
+	// Advance the Cursor to the end of the value being removed.
 	keyPath.setScannerState(endOfValue)
 	_, err = jsonCursor.AdvanceToLocation(ctx, keyPath, false)
 	if err != nil {
@@ -482,13 +482,13 @@ func (i IndexedJsonDocument) tryReplace(ctx context.Context, path string, val sq
 
 func (i IndexedJsonDocument) replaceIntoCursor(ctx context.Context, keyPath jsonLocation, jsonCursor *JsonCursor, val sql.JSONWrapper) (types.MutableJSON, bool, error) {
 
-	// The cursor is now pointing to the start of the value being replaced.
+	// The Cursor is now pointing to the start of the value being replaced.
 	jsonChunker, err := newJsonChunker(ctx, jsonCursor, i.m.NodeStore)
 	if err != nil {
 		return nil, false, err
 	}
 
-	// Advance the cursor to the end of the value being removed.
+	// Advance the Cursor to the end of the value being removed.
 	keyPath.setScannerState(endOfValue)
 	_, err = jsonCursor.AdvanceToLocation(ctx, keyPath, false)
 	if err != nil {

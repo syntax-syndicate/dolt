@@ -104,7 +104,7 @@ func iterTree(ctx context.Context, ns NodeStore, nd Node, cb func(item Item) err
 			return err
 		}
 
-		err = cb(cur.currentValue())
+		err = cb(cur.CurrentValue())
 		if err != nil {
 			return err
 		}

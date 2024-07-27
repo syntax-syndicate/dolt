@@ -86,7 +86,7 @@ func newEmptyJsonChunker(ctx context.Context, ns NodeStore) (*JsonChunker, error
 }
 
 // newJsonChunker creates a new JsonChunker based on an existing IndexedJsonDocument.
-// |jCur| is a cursor into the existing document, pointing to the location of the first change.
+// |jCur| is a Cursor into the existing document, pointing to the location of the first change.
 // |nextKey| is the location in the document of the next value to be written.
 func newJsonChunker(ctx context.Context, jCur *JsonCursor, ns NodeStore) (*JsonChunker, error) {
 	newChunkerFn := newChunker[message.AddressMapSerializer]
@@ -133,7 +133,7 @@ func (j *JsonChunker) Done(ctx context.Context) (Node, error) {
 	if j.jScanner.currentPath.getScannerState() == endOfValue && len(jsonBytes) > 0 && jsonBytes[0] != '}' && jsonBytes[0] != ']' && jsonBytes[0] != ',' {
 		j.appendJsonToBuffer([]byte(","))
 	}
-	// Append the rest of the JsonCursor, then continue until we either exhaust the cursor, or we coincide with a boundary from the original tree.
+	// Append the rest of the JsonCursor, then continue until we either exhaust the Cursor, or we coincide with a boundary from the original tree.
 	for {
 		j.appendJsonToBuffer(jsonBytes)
 		err := j.processBuffer(ctx)
@@ -141,7 +141,7 @@ func (j *JsonChunker) Done(ctx context.Context) (Node, error) {
 			return Node{}, err
 		}
 		if len(j.jScanner.jsonBuffer) == 0 {
-			// Advance the cursor so that we don't re-insert the current key when finalizing the chunker.
+			// Advance the Cursor so that we don't re-insert the current key when finalizing the chunker.
 			j.jCur.cur.advance(ctx)
 			return j.chunker.Done(ctx)
 		}
@@ -157,7 +157,7 @@ func (j *JsonChunker) Done(ctx context.Context) (Node, error) {
 			}
 			return j.chunker.Done(ctx)
 		}
-		jsonBytes = cur.currentValue()
+		jsonBytes = cur.CurrentValue()
 	}
 }
 
