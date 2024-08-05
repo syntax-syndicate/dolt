@@ -161,6 +161,10 @@ func (db database) RequestedName() string {
 	return db.Name()
 }
 
+func (db database) RevisionDbName() (string, string) {
+	return DoltClusterDbName, ""
+}
+
 type noopRepoStateWriter struct{}
 
 var _ env.RepoStateWriter = noopRepoStateWriter{}

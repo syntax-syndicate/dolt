@@ -139,14 +139,16 @@ func DSessFromSess(sess sql.Session) *DoltSession {
 	return sess.(*DoltSession)
 }
 
-// lookupDbState is the private version of LookupDbState, returning a struct that has more information available than
-// the interface returned by the public method.
 func (d *DoltSession) lookupDbState(ctx *sql.Context, dbName string) (*branchState, bool, error) {
 	dbName = strings.ToLower(dbName)
-
 	var baseName, rev string
 	baseName, rev = SplitRevisionDbName(dbName)
+	return d.lookupRevDbState(ctx, baseName, rev)
+}
 
+// lookupDbState is the private version of LookupDbState, returning a struct that has more information available than
+// the interface returned by the public method.
+func (d *DoltSession) lookupRevDbState(ctx *sql.Context, baseName, rev string) (*branchState, bool, error) {
 	d.mu.Lock()
 	dbState, dbStateFound := d.dbStates[baseName]
 	d.mu.Unlock()
@@ -171,7 +173,7 @@ func (d *DoltSession) lookupDbState(ctx *sql.Context, dbName string) (*branchSta
 	// No state for this db / branch combination yet, look it up from the provider. We use the unqualified DB name (no
 	// branch) if the current DB has not yet been loaded into this session. It will resolve to that DB's default branch
 	// in that case.
-	revisionQualifiedName := dbName
+	revisionQualifiedName := baseName
 	if rev != "" {
 		revisionQualifiedName = RevisionDbName(baseName, rev)
 	}
@@ -194,7 +196,7 @@ func (d *DoltSession) lookupDbState(ctx *sql.Context, dbName string) (*branchSta
 	d.mu.Unlock()
 	if !dbStateFound {
 		// should be impossible
-		return nil, false, sql.ErrDatabaseNotFound.New(dbName)
+		return nil, false, sql.ErrDatabaseNotFound.New(baseName)
 	}
 
 	return dbState.heads[strings.ToLower(database.Revision())], true, nil
@@ -223,6 +225,15 @@ func SplitRevisionDbName(dbName string) (string, string) {
 // Also returns a bool indicating whether the database was found, and an error if one occurred.
 func (d *DoltSession) LookupDbState(ctx *sql.Context, dbName string) (SessionState, bool, error) {
 	s, ok, err := d.lookupDbState(ctx, dbName)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return s, ok, nil
+}
+
+func (d *DoltSession) LookupRevDbState(ctx *sql.Context, dbName string, rev string) (SessionState, bool, error) {
+	s, ok, err := d.lookupRevDbState(ctx, dbName, rev)
 	if err != nil {
 		return nil, false, err
 	}
@@ -381,7 +392,8 @@ func (d *DoltSession) StartTransaction(ctx *sql.Context, tCharacteristic sql.Tra
 		// faulty settings can make it impossible to load particular DB branch states, so we ignore any errors in this
 		// loop and just decline to set the session vars. Throwing an error on transaction start in these cases makes it
 		// impossible for the user to correct any problems.
-		bs, ok, err := d.lookupDbState(ctx, db.Name())
+		baseName, rev := db.RevisionDbName()
+		bs, ok, err := d.lookupRevDbState(ctx, baseName, rev)
 		if err != nil || !ok {
 			continue
 		}
@@ -1157,9 +1169,7 @@ func (d *DoltSession) setForeignKeyChecksSessionVar(ctx *sql.Context, key string
 // other state tracking metadata.
 func (d *DoltSession) addDB(ctx *sql.Context, db SqlDatabase) error {
 	revisionQualifiedName := strings.ToLower(db.RevisionQualifiedName())
-	baseName, _ := SplitRevisionDbName(revisionQualifiedName)
-
-	DefineSystemVariablesForDB(baseName)
+	baseName, _ := db.RevisionDbName()
 
 	tx, usingDoltTransaction := d.GetTransaction().(*DoltTransaction)
 
@@ -1790,7 +1800,8 @@ func TransactionRoot(ctx *sql.Context, db SqlDatabase) (hash.Hash, error) {
 		return db.DbData().Ddb.NomsRoot(ctx)
 	}
 
-	nomsRoot, ok := tx.GetInitialRoot(db.Name())
+	baseName, _ := db.RevisionDbName()
+	nomsRoot, ok := tx.GetInitialRoot(baseName)
 	if !ok {
 		return hash.Hash{}, fmt.Errorf("could not resolve initial root for database %s", db.Name())
 	}

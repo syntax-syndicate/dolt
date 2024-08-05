@@ -92,6 +92,8 @@ func NewInitDatabaseHook(controller *Controller, bt *sql.BackgroundThreads) sqle
 			}
 		}
 
+		dsess.DefineSystemVariablesForDB(name)
+
 		return nil
 	}
 }

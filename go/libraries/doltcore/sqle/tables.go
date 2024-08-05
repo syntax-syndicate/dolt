@@ -392,7 +392,8 @@ func (t *DoltTable) GetIndexes(ctx *sql.Context) ([]sql.Index, error) {
 	}
 
 	sess := dsess.DSessFromSess(ctx.Session)
-	dbState, ok, err := sess.LookupDbState(ctx, t.db.RevisionQualifiedName())
+	baseName, rev := t.db.RevisionDbName()
+	dbState, ok, err := sess.LookupRevDbState(ctx, baseName, rev)
 	if err != nil {
 		return nil, err
 	}

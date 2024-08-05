@@ -49,6 +49,8 @@ type RevisionDatabase interface {
 	//  databases and others that we serve for custom purposes with similar pieces of functionality, and the session
 	//  management logic intermixes these concerns.
 	Versioned() bool
+	// RevisionDbName returns a lowercase base and revision name for a database
+	RevisionDbName() (string, string)
 }
 
 // RevisionType represents the type of revision a database is pinned to. For branches and tags, the revision is a

@@ -72,6 +72,8 @@ type Database struct {
 	editOpts      editor.Options
 	revision      string
 	revType       dsess.RevisionType
+	revBaseName   string
+	revName       string
 }
 
 var _ dsess.SqlDatabase = Database{}
@@ -151,6 +153,17 @@ func (db Database) Versioned() bool {
 
 func (db Database) RevisionType() dsess.RevisionType {
 	return db.revType
+}
+
+func (db Database) RevisionDbName() (string, string) {
+	if db.revBaseName == "" {
+		parts := strings.SplitN(db.requestedName, dsess.DbRevisionDelimiter, 2)
+		db.revBaseName = strings.ToLower(parts[0])
+		if len(parts) > 1 {
+			db.revName = strings.ToLower(parts[1])
+		}
+	}
+	return db.revBaseName, db.revName
 }
 
 func (db Database) EditOptions() editor.Options {
@@ -683,7 +696,8 @@ func (db Database) GetTableNamesAsOf(ctx *sql.Context, time interface{}) ([]stri
 // getTable returns the user table with the given baseName from the root given
 func (db Database) getTable(ctx *sql.Context, root doltdb.RootValue, tableName string) (sql.Table, bool, error) {
 	sess := dsess.DSessFromSess(ctx.Session)
-	dbState, ok, err := sess.LookupDbState(ctx, db.RevisionQualifiedName())
+	baseName, rev := db.RevisionDbName()
+	dbState, ok, err := sess.LookupRevDbState(ctx, baseName, rev)
 	if err != nil {
 		return nil, false, err
 	}
@@ -795,7 +809,8 @@ func (db Database) resolveUserTable(ctx *sql.Context, root doltdb.RootValue, tab
 // first result.
 func (db Database) tableInsensitive(ctx *sql.Context, root doltdb.RootValue, tableName string) (doltdb.TableName, *doltdb.Table, bool, error) {
 	sess := dsess.DSessFromSess(ctx.Session)
-	dbState, ok, err := sess.LookupDbState(ctx, db.RevisionQualifiedName())
+	baseName, rev := db.RevisionDbName()
+	dbState, ok, err := sess.LookupRevDbState(ctx, baseName, rev)
 	if err != nil {
 		return doltdb.TableName{}, nil, false, err
 	}
@@ -928,7 +943,8 @@ func filterDoltInternalTables(tblNames []string) []string {
 // GetRoot returns the root value for this database session
 func (db Database) GetRoot(ctx *sql.Context) (doltdb.RootValue, error) {
 	sess := dsess.DSessFromSess(ctx.Session)
-	dbState, ok, err := sess.LookupDbState(ctx, db.RevisionQualifiedName())
+	baseName, rev := db.RevisionDbName()
+	dbState, ok, err := sess.LookupRevDbState(ctx, baseName, rev)
 	if err != nil {
 		return nil, err
 	}
@@ -1497,7 +1513,8 @@ func (db Database) GetViewDefinition(ctx *sql.Context, viewName string) (sql.Vie
 	}
 
 	ds := dsess.DSessFromSess(ctx.Session)
-	dbState, _, err := ds.LookupDbState(ctx, db.RevisionQualifiedName())
+	baseName, rev := db.RevisionDbName()
+	dbState, _, err := ds.LookupRevDbState(ctx, baseName, rev)
 	if err != nil {
 		return sql.ViewDefinition{}, false, err
 	}

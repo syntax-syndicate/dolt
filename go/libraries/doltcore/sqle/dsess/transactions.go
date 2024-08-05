@@ -110,8 +110,8 @@ func NewDoltTransaction(
 			return nil, err
 		}
 
-		baseName, _ := SplitRevisionDbName(db.Name())
-		startPoints[strings.ToLower(baseName)] = dbRoot{
+		baseName, _ := db.RevisionDbName()
+		startPoints[baseName] = dbRoot{
 			dbName:   baseName,
 			rootHash: nomsRoot,
 			db:       db.DbData().Ddb,
@@ -153,8 +153,7 @@ func (tx DoltTransaction) IsReadOnly() bool {
 // GetInitialRoot returns the noms root hash for the db named, established when the transaction began. The dbName here
 // is always the base name of the database, not the revision qualified one.
 func (tx DoltTransaction) GetInitialRoot(dbName string) (hash.Hash, bool) {
-	dbName, _ = SplitRevisionDbName(dbName)
-	startPoint, ok := tx.dbStartPoints[strings.ToLower(dbName)]
+	startPoint, ok := tx.dbStartPoints[dbName]
 	return startPoint.rootHash, ok
 }
 
