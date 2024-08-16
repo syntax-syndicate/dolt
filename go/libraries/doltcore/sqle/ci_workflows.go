@@ -183,52 +183,8 @@ func (w *workflowsWriter) StatementBegin(ctx *sql.Context) {
 	}
 
 	if !found {
-		// TODO: This is effectively a duplicate of the schema declaration above in a different format.
-		// We should find a way to not repeat ourselves.
-		colCollection := schema.NewColCollection(
-			schema.Column{
-				Name:          doltdb.WorkflowsNameColName,
-				Tag:           schema.WorkflowsNameTag,
-				Kind:          stypes.StringKind,
-				IsPartOfPK:    true,
-				TypeInfo:      typeinfo.FromKind(stypes.StringKind),
-				Default:       "",
-				AutoIncrement: false,
-				Comment:       "",
-				Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-			},
-			schema.Column{
-				Name:          doltdb.WorkflowsCreatedAtColName,
-				Tag:           schema.WorkflowsCreatedAtTag,
-				Kind:          stypes.TimestampKind,
-				IsPartOfPK:    false,
-				TypeInfo:      typeinfo.FromKind(stypes.TimestampKind),
-				Default:       "",
-				AutoIncrement: false,
-				Comment:       "",
-				Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-			},
-			schema.Column{
-				Name:          doltdb.WorkflowsUpdatedAtColName,
-				Tag:           schema.WorkflowsUpdatedAtTag,
-				Kind:          stypes.TimestampKind,
-				IsPartOfPK:    false,
-				TypeInfo:      typeinfo.FromKind(stypes.TimestampKind),
-				Default:       "",
-				AutoIncrement: false,
-				Comment:       "",
-				Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-			},
-		)
-
-		newSchema, err := schema.NewSchema(colCollection, nil, schema.Collation_Default, nil, nil)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-
 		// underlying table doesn't exist. Record this, then create the table.
-		newRootValue, err := doltdb.CreateEmptyTable(ctx, roots.Working, doltdb.TableName{Name: doltdb.WorkflowsTableName}, newSchema)
+		newRootValue, err := CreateNewRootWithCIWorkflowsTable(ctx, roots.Working)
 		if err != nil {
 			w.errDuringStatementBegin = err
 			return
@@ -321,4 +277,52 @@ func (w *workflowsWriter) Close(ctx *sql.Context) error {
 		return w.tableWriter.Close(ctx)
 	}
 	return nil
+}
+
+func CreateNewRootWithCIWorkflowsTable(ctx *sql.Context, rv doltdb.RootValue) (doltdb.RootValue, error) {
+	// TODO: This is effectively a duplicate of the schema declaration above in a different format.
+	// We should find a way to not repeat ourselves.
+	colCollection := schema.NewColCollection(
+		schema.Column{
+			Name:          doltdb.WorkflowsNameColName,
+			Tag:           schema.WorkflowsNameTag,
+			Kind:          stypes.StringKind,
+			IsPartOfPK:    true,
+			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowsCreatedAtColName,
+			Tag:           schema.WorkflowsCreatedAtTag,
+			Kind:          stypes.TimestampKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.TimestampKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowsUpdatedAtColName,
+			Tag:           schema.WorkflowsUpdatedAtTag,
+			Kind:          stypes.TimestampKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.TimestampKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+	)
+
+	newSchema, err := schema.NewSchema(colCollection, nil, schema.Collation_Default, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// underlying table doesn't exist. Record this, then create the table.
+	return doltdb.CreateEmptyTable(ctx, rv, doltdb.TableName{Name: doltdb.WorkflowsTableName}, newSchema)
 }

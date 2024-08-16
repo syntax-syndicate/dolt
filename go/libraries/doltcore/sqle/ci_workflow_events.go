@@ -150,6 +150,21 @@ func newWorkflowEventsWriter(it *WorkflowEventsTable) *workflowEventsWriter {
 	return &workflowEventsWriter{it, nil, nil, nil}
 }
 
+func (w *workflowEventsWriter) createWorkflowsTable(ctx *sql.Context, rv doltdb.RootValue) (doltdb.RootValue, error) {
+	found, err := rv.HasTable(ctx, doltdb.TableName{Name: doltdb.WorkflowsTableName})
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return rv, nil
+	}
+	return CreateNewRootWithCIWorkflowsTable(ctx, rv)
+}
+
+func (w *workflowEventsWriter) createNewRootWithParentTables(ctx *sql.Context, rv doltdb.RootValue) (doltdb.RootValue, error) {
+	return w.createWorkflowsTable(ctx, rv)
+}
+
 // StatementBegin is called before the first operation of a statement. Integrators should mark the state of the data
 // in some way that it may be returned to in the case of an error.
 func (w *workflowEventsWriter) StatementBegin(ctx *sql.Context) {
@@ -190,129 +205,32 @@ func (w *workflowEventsWriter) StatementBegin(ctx *sql.Context) {
 	}
 
 	if !found {
-		// TODO: This is effectively a duplicate of the schema declaration above in a different format.
-		// We should find a way to not repeat ourselves.
-		colCollection := schema.NewColCollection(
-			schema.Column{
-				Name:          doltdb.WorkflowEventsIdPkColName,
-				Tag:           schema.WorkflowEventsIdTag,
-				Kind:          stypes.StringKind,
-				IsPartOfPK:    true,
-				TypeInfo:      typeinfo.FromKind(stypes.StringKind),
-				Default:       "",
-				AutoIncrement: false,
-				Comment:       "",
-				Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-			},
-			schema.Column{
-				Name:          doltdb.WorkflowEventsWorkflowNameFkColName,
-				Tag:           schema.WorkflowEventsWorkflowNameFkTag,
-				Kind:          stypes.StringKind,
-				IsPartOfPK:    false,
-				TypeInfo:      typeinfo.FromKind(stypes.StringKind),
-				Default:       "",
-				AutoIncrement: false,
-				Comment:       "",
-				Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-			},
-			schema.Column{
-				Name:          doltdb.WorkflowEventsEventTypeColName,
-				Tag:           schema.WorkflowEventsEventTypeTag,
-				Kind:          stypes.IntKind,
-				IsPartOfPK:    false,
-				TypeInfo:      typeinfo.FromKind(stypes.IntKind),
-				Default:       "",
-				AutoIncrement: false,
-				Comment:       "",
-				Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-			},
-		)
-
-		newSchema, err := schema.NewSchema(colCollection, nil, schema.Collation_Default, nil, nil)
+		// create parent table first
+		newRootValue, err := w.createNewRootWithParentTables(ctx, roots.Working)
 		if err != nil {
 			w.errDuringStatementBegin = err
 			return
 		}
 
-		// underlying table doesn't exist. Record this, then create the table.
-		newRootValue, err := doltdb.CreateEmptyTable(ctx, roots.Working, doltdb.TableName{Name: doltdb.WorkflowEventsTableName}, newSchema)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
+		//err = dSess.SetWorkingRoot(ctx, dbName, newRootValue)
+		//if err != nil {
+		//	w.errDuringStatementBegin = err
+		//	return
+		//}
 
-		if dbState.WorkingSet() == nil {
-			w.errDuringStatementBegin = doltdb.ErrOperationNotSupportedInDetachedHead
-			return
-		}
-
-		// We use WriteSession.SetWorkingSet instead of DoltSession.SetWorkingRoot because we want to avoid modifying the root
-		// until the end of the transaction, but we still want the WriteSession to be able to find the newly
-		// created table.
-
-		if ws := dbState.WriteSession(); ws != nil {
-			err = ws.SetWorkingSet(ctx, dbState.WorkingSet().WithWorkingRoot(newRootValue))
-			if err != nil {
-				w.errDuringStatementBegin = err
-				return
-			}
-		}
-
-		tbl, exists, err := newRootValue.GetTable(ctx, doltdb.TableName{Name: doltdb.WorkflowEventsTableName})
+		_, exists, err := newRootValue.GetTable(ctx, doltdb.TableName{
+			Name: doltdb.WorkflowsTableName,
+		})
 		if err != nil {
 			w.errDuringStatementBegin = err
 			return
 		}
 
 		if !exists {
-			w.errDuringStatementBegin = fmt.Errorf("failed to create %s table", doltdb.WorkflowEventsTableName)
-			return
+			panic("wtf bitch")
 		}
 
-		sfkc := sql.ForeignKeyConstraint{
-			Name:           fmt.Sprintf("%s_%s", doltdb.WorkflowEventsTableName, doltdb.WorkflowEventsWorkflowNameFkColName),
-			Database:       w.it.dbName,
-			Table:          doltdb.WorkflowEventsTableName,
-			Columns:        []string{doltdb.WorkflowEventsWorkflowNameFkColName},
-			ParentDatabase: w.it.dbName,
-			ParentTable:    doltdb.WorkflowsTableName,
-			ParentColumns:  []string{doltdb.WorkflowsNameColName},
-			OnDelete:       sql.ForeignKeyReferentialAction_Cascade,
-			OnUpdate:       sql.ForeignKeyReferentialAction_DefaultAction,
-			IsResolved:     false,
-		}
-
-		onUpdateRefAction, err := parseFkReferentialAction(sfkc.OnUpdate)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-
-		onDeleteRefAction, err := parseFkReferentialAction(sfkc.OnDelete)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-
-		doltFk, err := createDTableForeignKey(ctx, newRootValue, tbl, newSchema, sfkc, onUpdateRefAction, onDeleteRefAction, w.it.db.schemaName)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-
-		fkc, err := newRootValue.GetForeignKeyCollection(ctx)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-
-		err = fkc.AddKeys(doltFk)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-
-		newRootValue, err = newRootValue.PutForeignKeyCollection(ctx, fkc)
+		newRootValue, err = CreateNewRootWithWorkflowEventsTable(ctx, dbState, newRootValue, w.it.dbName, w.it.db.schemaName)
 		if err != nil {
 			w.errDuringStatementBegin = err
 			return
@@ -324,15 +242,15 @@ func (w *workflowEventsWriter) StatementBegin(ctx *sql.Context) {
 			return
 		}
 
-		dbState, ok, err = dSess.LookupDbState(ctx, dbName)
-		if err != nil {
-			w.errDuringStatementBegin = err
-			return
-		}
-		if !ok {
-			w.errDuringStatementBegin = fmt.Errorf("no root value found in session")
-			return
-		}
+		//dbState, ok, err = dSess.LookupDbState(ctx, dbName)
+		//if err != nil {
+		//	w.errDuringStatementBegin = err
+		//	return
+		//}
+		//if !ok {
+		//	w.errDuringStatementBegin = fmt.Errorf("no root value found in session")
+		//	return
+		//}
 	}
 
 	if ws := dbState.WriteSession(); ws != nil {
@@ -398,4 +316,119 @@ func (w *workflowEventsWriter) Close(ctx *sql.Context) error {
 		return w.tableWriter.Close(ctx)
 	}
 	return nil
+}
+
+func CreateNewRootWithWorkflowEventsTable(ctx *sql.Context, dbState dsess.SessionState, rv doltdb.RootValue, dbName, schemaName string) (doltdb.RootValue, error) {
+	// TODO: This is effectively a duplicate of the schema declaration above in a different format.
+	// We should find a way to not repeat ourselves.
+	colCollection := schema.NewColCollection(
+		schema.Column{
+			Name:          doltdb.WorkflowEventsIdPkColName,
+			Tag:           schema.WorkflowEventsIdTag,
+			Kind:          stypes.StringKind,
+			IsPartOfPK:    true,
+			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowEventsWorkflowNameFkColName,
+			Tag:           schema.WorkflowEventsWorkflowNameFkTag,
+			Kind:          stypes.StringKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowEventsEventTypeColName,
+			Tag:           schema.WorkflowEventsEventTypeTag,
+			Kind:          stypes.IntKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.IntKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+	)
+
+	newSchema, err := schema.NewSchema(colCollection, nil, schema.Collation_Default, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// underlying table doesn't exist. Record this, then create the table.
+	newRootValue, err := doltdb.CreateEmptyTable(ctx, rv, doltdb.TableName{Name: doltdb.WorkflowEventsTableName}, newSchema)
+	if err != nil {
+		return nil, err
+	}
+
+	if dbState.WorkingSet() == nil {
+		return nil, doltdb.ErrOperationNotSupportedInDetachedHead
+	}
+
+	// We use WriteSession.SetWorkingSet instead of DoltSession.SetWorkingRoot because we want to avoid modifying the root
+	// until the end of the transaction, but we still want the WriteSession to be able to find the newly
+	// created table.
+
+	if ws := dbState.WriteSession(); ws != nil {
+		err = ws.SetWorkingSet(ctx, dbState.WorkingSet().WithWorkingRoot(newRootValue))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	tbl, exists, err := newRootValue.GetTable(ctx, doltdb.TableName{Name: doltdb.WorkflowEventsTableName})
+	if err != nil {
+		return nil, err
+	}
+
+	if !exists {
+		return nil, fmt.Errorf("failed to create %s table", doltdb.WorkflowEventsTableName)
+	}
+
+	sfkc := sql.ForeignKeyConstraint{
+		Name:           fmt.Sprintf("%s_%s", doltdb.WorkflowEventsTableName, doltdb.WorkflowEventsWorkflowNameFkColName),
+		Database:       dbName,
+		Table:          doltdb.WorkflowEventsTableName,
+		Columns:        []string{doltdb.WorkflowEventsWorkflowNameFkColName},
+		ParentDatabase: dbName,
+		ParentTable:    doltdb.WorkflowsTableName,
+		ParentColumns:  []string{doltdb.WorkflowsNameColName},
+		OnDelete:       sql.ForeignKeyReferentialAction_Cascade,
+		OnUpdate:       sql.ForeignKeyReferentialAction_DefaultAction,
+		IsResolved:     false,
+	}
+
+	onUpdateRefAction, err := parseFkReferentialAction(sfkc.OnUpdate)
+	if err != nil {
+		return nil, err
+	}
+
+	onDeleteRefAction, err := parseFkReferentialAction(sfkc.OnDelete)
+	if err != nil {
+		return nil, err
+	}
+
+	doltFk, err := createDTableForeignKey(ctx, newRootValue, tbl, newSchema, sfkc, onUpdateRefAction, onDeleteRefAction, schemaName)
+	if err != nil {
+		return nil, err
+	}
+
+	fkc, err := newRootValue.GetForeignKeyCollection(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = fkc.AddKeys(doltFk)
+	if err != nil {
+		return nil, err
+	}
+
+	return newRootValue.PutForeignKeyCollection(ctx, fkc)
 }
