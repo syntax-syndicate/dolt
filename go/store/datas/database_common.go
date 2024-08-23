@@ -822,6 +822,8 @@ func (db *database) doUpdateWorkingSet(ctx context.Context, datasetID string, ad
 		if err != nil {
 			return prolly.AddressMap{}, err
 		}
+		fmt.Fprintf(color.Output, "curr: %s\n", curr)
+		fmt.Fprintf(color.Output, "currHash: %s\n", currHash)
 		if curr != currHash {
 			return prolly.AddressMap{}, ErrOptimisticLockFailed
 		}
