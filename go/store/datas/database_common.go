@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/fatih/color"
 
 	"github.com/dolthub/dolt/go/gen/fb/serial"
 	"github.com/dolthub/dolt/go/store/chunks"
@@ -844,11 +845,15 @@ func assertDatasetHash(
 ) (bool, error) {
 	curr, ok, err := datasets.MaybeGet(ctx, types.String(datasetID))
 	if err != nil {
+		fmt.Fprintf(color.Output, "datasets.MaybeGet() err: %s\n", err.Error())
 		return false, err
 	}
 	if !ok {
+		fmt.Fprintf(color.Output, "no ok\n")
 		return currHash.IsEmpty(), nil
 	}
+	fmt.Fprintf(color.Output, "curr.TargetHash(): %s\n", curr.(types.Ref).TargetHash())
+	fmt.Fprintf(color.Output, "currHash: %s\n", currHash)
 	return curr.(types.Ref).TargetHash().Equal(currHash), nil
 }
 

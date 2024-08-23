@@ -144,7 +144,7 @@ func (d *doltCIWorkflowsTableCreator) CreateTable(ctx *sql.Context) error {
 	//	return err
 	//}
 
-	err = ddb.UpdateWorkingSet(ctx, newWorkingSetRef, newWorkingSet, startHash, doltdb.TodoWorkingSetMeta(), nil)
+	err = ddb.UpdateWorkingSet(ctx, newWorkingSetRef, newWorkingSet, startHash, ws.Meta(), nil)
 	if err != nil {
 		return err
 	}
