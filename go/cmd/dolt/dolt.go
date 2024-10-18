@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/dolthub/dolt/go/cmd/dolt/commands/ci"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
