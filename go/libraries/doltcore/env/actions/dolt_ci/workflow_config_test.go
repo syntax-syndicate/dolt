@@ -77,4 +77,21 @@ jobs:
 	wf, err := ParseWorkflow(strings.NewReader(yml))
 	require.NoError(t, err)
 	require.NotNil(t, wf)
+
+	require.Equal(t, workflowName, wf.Name)
+	require.Equal(t, len(wf.On.Push.Branches), 2)
+	require.Equal(t, len(wf.On.PullRequest.Branches), 2)
+	require.Equal(t, len(wf.On.PullRequest.Activities), 2)
+	require.Equal(t, wf.On.Push.Branches[0], mainBranch)
+	require.Equal(t, wf.On.Push.Branches[1], altBranch)
+	require.Equal(t, wf.On.PullRequest.Branches[0], mainBranch)
+	require.Equal(t, wf.On.PullRequest.Branches[1], alt2Branch)
+	require.Equal(t, wf.On.PullRequest.Activities[0], opened)
+	require.Equal(t, wf.On.PullRequest.Activities[1], synchronized)
+	require.Equal(t, len(wf.Jobs), 1)
+	require.Equal(t, wf.Jobs[0].Name, jobName)
+	require.Equal(t, len(wf.Jobs[0].Steps), 1)
+	require.Equal(t, wf.Jobs[0].Steps[0].Name, stepName)
+
+	// todo: check expected stuff
 }
