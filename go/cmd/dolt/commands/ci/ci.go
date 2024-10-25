@@ -20,4 +20,5 @@ import (
 
 var Commands = cli.NewHiddenSubCommandHandler("ci", "Commands for working with Dolt continuous integration configuration.", []cli.Command{
 	InitCmd{},
+	ImportCmd{},
 })
