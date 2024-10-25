@@ -15,12 +15,12 @@
 package dtables
 
 import (
+	"github.com/dolthub/dolt/go/libraries/doltcore/row"
 	"github.com/dolthub/go-mysql-server/sql"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/index"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
-	"github.com/dolthub/dolt/go/libraries/doltcore/row"
 	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/sqlutil"
 	"github.com/dolthub/dolt/go/store/types"
@@ -131,16 +131,16 @@ type constraintViolationsIter struct {
 var _ sql.RowIter = (*constraintViolationsIter)(nil)
 
 // Next implements the interface sql.RowIter.
-func (cvi *constraintViolationsIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (cvi *constraintViolationsIter) Next(ctx *sql.Context, r sql.LazyRow) error {
 	k, v, err := cvi.iter.NextTuple(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	dRow, err := row.FromNoms(cvi.dSch, k, v)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return sqlutil.DoltRowToSqlRow(dRow, cvi.dSch)
+	return sqlutil.DoltRowToSqlRow(dRow, cvi.dSch, r)
 }
 
 // Close implements the interface sql.RowIter.
@@ -157,7 +157,7 @@ type constraintViolationsDeleter struct {
 var _ sql.RowDeleter = (*constraintViolationsDeleter)(nil)
 
 // Delete implements the interface sql.RowDeleter.
-func (cvd *constraintViolationsDeleter) Delete(ctx *sql.Context, r sql.Row) error {
+func (cvd *constraintViolationsDeleter) Delete(ctx *sql.Context, r sql.LazyRow) error {
 	dRow, err := sqlutil.SqlRowToDoltRow(ctx, cvd.cvt.tbl.ValueReadWriter(), r, cvd.cvt.cvSch)
 	if err != nil {
 		return err

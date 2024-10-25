@@ -167,28 +167,30 @@ func ProjectionMappingsForIndex(sch schema.Schema, projections []uint64) (keyMap
 	return keyMap, valMap, ordMap
 }
 
-func (it prollyRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (it prollyRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	key, value, err := it.iter.Next(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	row := make(sql.Row, it.rowLen)
+	var val interface{}
 	for i, idx := range it.keyProj {
 		outputIdx := it.ordProj[i]
-		row[outputIdx], err = tree.GetField(ctx, it.keyDesc, idx, key, it.ns)
+		val, err = tree.GetField(ctx, it.keyDesc, idx, key, it.ns)
 		if err != nil {
-			return nil, err
+			return err
 		}
+		row.SetSqlValue(outputIdx, val)
 	}
 	for i, idx := range it.valProj {
 		outputIdx := it.ordProj[len(it.keyProj)+i]
-		row[outputIdx], err = tree.GetField(ctx, it.valDesc, idx, value, it.ns)
+		val, err = tree.GetField(ctx, it.valDesc, idx, value, it.ns)
 		if err != nil {
-			return nil, err
+			return err
 		}
+		row.SetSqlValue(outputIdx, val)
 	}
-	return row, nil
+	return nil
 }
 
 func (it prollyRowIter) Close(ctx *sql.Context) error {
@@ -212,16 +214,17 @@ var _ sql.RowIter = &prollyKeylessIter{}
 
 //var _ sql.RowIter2 = prollyKeylessIter{}
 
-func (it *prollyKeylessIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (it *prollyKeylessIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if it.card == 0 {
 		if err := it.nextTuple(ctx); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	it.card--
 
-	return it.curr, nil
+	row.CopyRange(0, it.curr)
+	return nil
 }
 
 func (it *prollyKeylessIter) nextTuple(ctx *sql.Context) error {

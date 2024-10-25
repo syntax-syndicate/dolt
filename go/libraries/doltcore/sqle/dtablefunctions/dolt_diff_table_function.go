@@ -164,7 +164,7 @@ func (dtf *DiffTableFunction) Children() []sql.Node {
 }
 
 // RowIter implements the sql.Node interface
-func (dtf *DiffTableFunction) RowIter(ctx *sql.Context, _ sql.Row) (sql.RowIter, error) {
+func (dtf *DiffTableFunction) RowIter(ctx *sql.Context, _ sql.LazyRow) (sql.RowIter, error) {
 	// Everything we need to start iterating was cached when we previously determined the schema of the result
 	// TODO: When we add support for joining on table functions, we'll need to evaluate this against the
 	//       specified row. That row is what has the left_table context in a join query.

@@ -254,13 +254,15 @@ const mergedStatus = "merged"
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *StatusItr) Next(*sql.Context) (sql.Row, error) {
+func (itr *StatusItr) Next(_ *sql.Context, row sql.LazyRow) error {
 	if len(itr.rows) <= 0 {
-		return nil, io.EOF
+		return io.EOF
 	}
-	row := itr.rows[0]
+	row_ := itr.rows[0]
 	itr.rows = itr.rows[1:]
-	return sql.NewRow(row.tableName, row.isStaged, row.status), nil
+	r := sql.NewRow(row_.tableName, row_.isStaged, row_.status)
+	row.CopyRange(0, r)
+	return nil
 }
 
 // Close closes the iterator.

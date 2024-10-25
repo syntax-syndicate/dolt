@@ -262,7 +262,7 @@ func (ds *SchemaDiffTableFunction) WithExpressions(exprs ...sql.Expression) (sql
 }
 
 // RowIter implements the sql.Node interface
-func (ds *SchemaDiffTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (ds *SchemaDiffTableFunction) RowIter(ctx *sql.Context, row sql.LazyRow) (sql.RowIter, error) {
 	fromCommitVal, toCommitVal, dotCommitVal, tableName, err := ds.evaluateArguments()
 	if err != nil {
 		return nil, err
@@ -394,13 +394,14 @@ type schemaDiffTableFunctionRowIter struct {
 	idx  int
 }
 
-func (s *schemaDiffTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (s *schemaDiffTableFunctionRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if s.idx >= len(s.rows) {
-		return nil, io.EOF
+		return io.EOF
 	} else {
-		row := s.rows[s.idx]
+		r := s.rows[s.idx]
 		s.idx++
-		return row, nil
+		row.CopyRange(0, r)
+		return nil
 	}
 }
 

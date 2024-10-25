@@ -200,55 +200,55 @@ func newProllyConflictRowIter(ctx *sql.Context, ct ProllyConflictsTable) (*proll
 	}, nil
 }
 
-func (itr *prollyConflictRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *prollyConflictRowIter) Next(ctx *sql.Context, r sql.LazyRow) error {
 	c, err := itr.nextConflictVals(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	r := make(sql.Row, itr.n)
-	r[0] = c.h.String()
+	//r := make(sql.Row, itr.n)
+	r.SetSqlValue(0, c.h.String())
 
 	if !itr.keyless {
 		for i := 0; i < itr.kd.Count(); i++ {
 			f, err := tree.GetField(ctx, itr.kd, i, c.k, itr.baseRows.NodeStore())
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if c.bV != nil {
-				r[itr.b+i] = f
+				r.SetSqlValue(itr.b+i, f)
 			}
 			if c.oV != nil {
-				r[itr.o+i] = f
+				r.SetSqlValue(itr.o+i, f)
 			}
 			if c.tV != nil {
-				r[itr.t+i] = f
+				r.SetSqlValue(itr.t+i, f)
 			}
 		}
 
 		err = itr.putConflictRowVals(ctx, c, r)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else {
 
 		err = itr.putKeylessConflictRowVals(ctx, c, r)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return r, nil
+	return nil
 }
 
-func (itr *prollyConflictRowIter) putConflictRowVals(ctx *sql.Context, c conf, r sql.Row) error {
+func (itr *prollyConflictRowIter) putConflictRowVals(ctx *sql.Context, c conf, r sql.LazyRow) error {
 	if c.bV != nil {
 		for i := 0; i < itr.baseVD.Count(); i++ {
 			f, err := tree.GetField(ctx, itr.baseVD, i, c.bV, itr.baseRows.NodeStore())
 			if err != nil {
 				return err
 			}
-			r[itr.b+itr.kd.Count()+i] = f
+			r.SetSqlValue(itr.b+itr.kd.Count()+i, f)
 		}
 	}
 
@@ -258,10 +258,10 @@ func (itr *prollyConflictRowIter) putConflictRowVals(ctx *sql.Context, c conf, r
 			if err != nil {
 				return err
 			}
-			r[itr.o+itr.kd.Count()+i] = f
+			r.SetSqlValue(itr.o+itr.kd.Count()+i, f)
 		}
 	}
-	r[itr.o+itr.kd.Count()+itr.oursVD.Count()] = getDiffType(c.bV, c.oV)
+	r.SetSqlValue(itr.o+itr.kd.Count()+itr.oursVD.Count(), getDiffType(c.bV, c.oV))
 
 	if c.tV != nil {
 		for i := 0; i < itr.theirsVD.Count(); i++ {
@@ -269,11 +269,11 @@ func (itr *prollyConflictRowIter) putConflictRowVals(ctx *sql.Context, c conf, r
 			if err != nil {
 				return err
 			}
-			r[itr.t+itr.kd.Count()+i] = f
+			r.SetSqlValue(itr.t+itr.kd.Count()+i, f)
 		}
 	}
-	r[itr.t+itr.kd.Count()+itr.theirsVD.Count()] = getDiffType(c.bV, c.tV)
-	r[itr.t+itr.kd.Count()+itr.theirsVD.Count()+1] = c.id
+	r.SetSqlValue(itr.t+itr.kd.Count()+itr.theirsVD.Count(), getDiffType(c.bV, c.tV))
+	r.SetSqlValue(itr.t+itr.kd.Count()+itr.theirsVD.Count()+1, c.id)
 
 	return nil
 }
@@ -289,66 +289,68 @@ func getDiffType(base val.Tuple, other val.Tuple) string {
 	return merge.ConflictDiffTypeModified
 }
 
-func (itr *prollyConflictRowIter) putKeylessConflictRowVals(ctx *sql.Context, c conf, r sql.Row) (err error) {
+func (itr *prollyConflictRowIter) putKeylessConflictRowVals(ctx *sql.Context, c conf, r sql.LazyRow) (err error) {
 	ns := itr.baseRows.NodeStore()
 
+	var val interface{}
 	if c.bV != nil {
 		// Cardinality
-		r[itr.n-3], err = tree.GetField(ctx, itr.baseVD, 0, c.bV, ns)
+		val, err = tree.GetField(ctx, itr.baseVD, 0, c.bV, ns)
 		if err != nil {
 			return err
 		}
-
+		r.SetSqlValue(itr.n-3, val)
 		for i := 0; i < itr.baseVD.Count()-1; i++ {
 			f, err := tree.GetField(ctx, itr.baseVD, i+1, c.bV, ns)
 			if err != nil {
 				return err
 			}
-			r[itr.b+i] = f
+			r.SetSqlValue(itr.b+i, f)
 		}
 	} else {
-		r[itr.n-3] = uint64(0)
+		r.SetSqlValue(itr.n-3, uint64(0))
 	}
 
 	if c.oV != nil {
-		r[itr.n-2], err = tree.GetField(ctx, itr.oursVD, 0, c.oV, ns)
+		val, err = tree.GetField(ctx, itr.oursVD, 0, c.oV, ns)
 		if err != nil {
 			return err
 		}
-
+		r.SetSqlValue(itr.n-2, val)
 		for i := 0; i < itr.oursVD.Count()-1; i++ {
 			f, err := tree.GetField(ctx, itr.oursVD, i+1, c.oV, ns)
 			if err != nil {
 				return err
 			}
-			r[itr.o+i] = f
+			r.SetSqlValue(itr.o+i, f)
 		}
 	} else {
-		r[itr.n-2] = uint64(0)
+		r.SetSqlValue(itr.n-2, uint64(0))
 	}
 
-	r[itr.o+itr.oursVD.Count()-1] = getDiffType(c.bV, c.oV)
+	r.SetSqlValue(itr.o+itr.oursVD.Count()-1, getDiffType(c.bV, c.oV))
 
 	if c.tV != nil {
-		r[itr.n-1], err = tree.GetField(ctx, itr.theirsVD, 0, c.tV, ns)
+		val, err = tree.GetField(ctx, itr.theirsVD, 0, c.tV, ns)
 		if err != nil {
 			return err
 		}
+		r.SetSqlValue(itr.n-1, val)
 
 		for i := 0; i < itr.theirsVD.Count()-1; i++ {
 			f, err := tree.GetField(ctx, itr.theirsVD, i+1, c.tV, ns)
 			if err != nil {
 				return err
 			}
-			r[itr.t+i] = f
+			r.SetSqlValue(itr.t+i, f)
 		}
 	} else {
-		r[itr.n-1] = uint64(0)
+		r.SetSqlValue(itr.n-1, uint64(0))
 	}
 
 	o := itr.t + itr.theirsVD.Count() - 1
-	r[o] = getDiffType(c.bV, c.tV)
-	r[itr.n-4] = c.id
+	r.SetSqlValue(o, getDiffType(c.bV, c.tV))
+	r.SetSqlValue(itr.n-4, c.id)
 
 	return nil
 }
@@ -478,20 +480,20 @@ func newProllyConflictOurTableUpdater(ourUpdater sql.RowUpdater, versionMappings
 }
 
 // Update implements sql.RowUpdater. It translates updates on the conflict table to the source table.
-func (cu *prollyConflictOurTableUpdater) Update(ctx *sql.Context, oldRow sql.Row, newRow sql.Row) error {
+func (cu *prollyConflictOurTableUpdater) Update(ctx *sql.Context, oldRow sql.LazyRow, newRow sql.LazyRow) error {
 
 	// Apply updates to columns prefixed with our_
 	// Updates to other columns are no-ops.
 	ourOldRow := make(sql.Row, len(cu.versionMappings.ourMapping))
 	ourNewRow := make(sql.Row, len(cu.versionMappings.ourMapping))
 	for i, j := range cu.versionMappings.ourMapping {
-		ourOldRow[i] = oldRow[j]
+		ourOldRow[i] = oldRow.SqlValue(j)
 	}
 	for i, j := range cu.versionMappings.ourMapping {
-		ourNewRow[i] = newRow[j]
+		ourNewRow[i] = newRow.SqlValue(j)
 	}
 
-	return cu.srcUpdater.Update(ctx, ourOldRow, ourNewRow)
+	return cu.srcUpdater.Update(ctx, sql.NewSqlRowFromRow(ourOldRow), sql.NewSqlRowFromRow(ourNewRow))
 }
 
 // StatementBegin implements sql.RowUpdater.
@@ -554,19 +556,19 @@ func newProllyConflictDeleter(ct ProllyConflictsTable) *prollyConflictDeleter {
 	}
 }
 
-func (cd *prollyConflictDeleter) Delete(ctx *sql.Context, r sql.Row) (err error) {
+func (cd *prollyConflictDeleter) Delete(ctx *sql.Context, r sql.LazyRow) (err error) {
 	// first part of the artifact key is the keys of the source table
 	if !schema.IsKeyless(cd.ct.ourSch) {
-		err = cd.putPrimaryKeys(ctx, r)
+		err = cd.putPrimaryKeys(ctx, r.SqlValues())
 	} else {
-		err = cd.putKeylessHash(ctx, r)
+		err = cd.putKeylessHash(ctx, r.SqlValues())
 	}
 	if err != nil {
 		return err
 	}
 
 	// then the hash follows. It is the first column of the row and the second to last in the key
-	h := hash.Parse(r[0].(string))
+	h := hash.Parse(r.SqlValue(0).(string))
 	cd.kB.PutCommitAddr(cd.kd.Count()-2, h)
 
 	// Finally the artifact type which is always a conflict

@@ -175,7 +175,7 @@ func resolveOverriddenSchemaRoot(ctx *sql.Context, db Database) (doltdb.RootValu
 //     the schema. String types are currently the only exception: they will be truncated to fit into narrower types
 //     if necessary, and a warning will be logged in the session. This is similar to the behavior of the diff tables
 //     but instead of returning an error, they log a warning and return a NULL value.
-func rowConverterByColTagAndName(srcSchema, targetSchema schema.Schema, projectedTags []uint64, projectedColNames []string) func(ctx *sql.Context, row sql.Row) (sql.Row, error) {
+func rowConverterByColTagAndName(srcSchema, targetSchema schema.Schema, projectedTags []uint64, projectedColNames []string) func(ctx *sql.Context, row sql.LazyRow) error {
 	srcIndexToTargetIndex := make(map[int]int)
 	srcIndexToTargetType := make(map[int]typeinfo.TypeInfo)
 	for i, targetColumn := range targetSchema.GetAllCols().GetColumns() {
@@ -191,7 +191,7 @@ func rowConverterByColTagAndName(srcSchema, targetSchema schema.Schema, projecte
 		}
 	}
 
-	return func(ctx *sql.Context, row sql.Row) (sql.Row, error) {
+	return func(ctx *sql.Context, row sql.LazyRow) error {
 		r := make(sql.Row, len(projectedColNames))
 		for i, tag := range projectedTags {
 			// First try to find the column in the src schema with the matching tag
@@ -203,19 +203,20 @@ func rowConverterByColTagAndName(srcSchema, targetSchema schema.Schema, projecte
 
 			if found {
 				srcIndex := srcSchema.GetAllCols().IndexOf(srcColumn.Name)
-				temp := row[srcIndex]
+				temp := row.SqlValue(srcIndex)
 
 				conversionType := srcIndexToTargetType[srcIndex]
 
 				convertedValue, err := convertWithTruncation(ctx, temp, conversionType)
 				if err != nil {
-					return nil, err
+					return err
 				}
 
 				r[i] = convertedValue
 			}
 		}
-		return r, nil
+		row.CopyRange(0, r)
+		return nil
 	}
 }
 
@@ -257,7 +258,7 @@ func newMappingRowIter(ctx *sql.Context, t *DoltTable, wrappedIter sql.RowIter) 
 
 // newRowConverterForDoltTable returns a function that converts rows from the original schema of |t| to the overridden
 // schema of |t|.
-func newRowConverterForDoltTable(ctx *sql.Context, t *DoltTable) (func(ctx *sql.Context, row sql.Row) (sql.Row, error), error) {
+func newRowConverterForDoltTable(ctx *sql.Context, t *DoltTable) (func(ctx *sql.Context, row sql.LazyRow) error, error) {
 	// If there is a schema override, then we need to map the results
 	// from the old schema to the new schema
 	doltSession := dsess.DSessFromSess(ctx.Session)
@@ -287,22 +288,22 @@ func newRowConverterForDoltTable(ctx *sql.Context, t *DoltTable) (func(ctx *sql.
 // mappingRowIter is a RowIter that maps rows from a child RowIter to a new schema using a row conversion function.
 type mappingRowIter struct {
 	child       sql.RowIter
-	rowConvFunc func(ctx *sql.Context, row sql.Row) (sql.Row, error)
+	rowConvFunc func(ctx *sql.Context, row sql.LazyRow) error
 }
 
 var _ sql.RowIter = (*mappingRowIter)(nil)
 
 // Next implements the sql.RowIter interface
-func (m *mappingRowIter) Next(ctx *sql.Context) (sql.Row, error) {
-	next, err := m.child.Next(ctx)
+func (m *mappingRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
+	err := m.child.Next(ctx, row)
 	if err != nil {
-		return next, err
+		return err
 	}
 
 	if m.rowConvFunc == nil {
-		return next, nil
+		return nil
 	} else {
-		return m.rowConvFunc(ctx, next)
+		return m.rowConvFunc(ctx, row)
 	}
 }
 

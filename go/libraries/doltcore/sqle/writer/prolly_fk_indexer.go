@@ -125,15 +125,15 @@ type prollyFkPkRowIter struct {
 var _ sql.RowIter = prollyFkPkRowIter{}
 
 // Next implements the interface sql.RowIter.
-func (iter prollyFkPkRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (iter prollyFkPkRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for {
 		// |rangeIter| iterates on the foreign key index of the parent table
 		k, _, err := iter.rangeIter.Next(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if k == nil {
-			return nil, io.EOF
+			return io.EOF
 		}
 
 		pkBld := iter.primary.keyBld
@@ -148,7 +148,7 @@ func (iter prollyFkPkRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if tblKey == nil {
 			continue // referential integrity broken
@@ -156,23 +156,27 @@ func (iter prollyFkPkRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 
 		if iter.refCheck {
 			// no need to deserialize
-			return nil, nil
+			return nil
 		}
 
-		nextRow := make(sql.Row, len(iter.primary.keyMap)+len(iter.primary.valMap))
+		//nextRow := make(sql.Row, len(iter.primary.keyMap)+len(iter.primary.valMap))
+
+		var val interface{}
 		for from := range iter.primary.keyMap {
 			to := iter.primary.keyMap.MapOrdinal(from)
-			if nextRow[to], err = tree.GetField(ctx, iter.primary.keyBld.Desc, from, tblKey, iter.primary.mut.NodeStore()); err != nil {
-				return nil, err
+			if val, err = tree.GetField(ctx, iter.primary.keyBld.Desc, from, tblKey, iter.primary.mut.NodeStore()); err != nil {
+				return err
 			}
+			row.SetSqlValue(to, val)
 		}
 		for from := range iter.primary.valMap {
 			to := iter.primary.valMap.MapOrdinal(from)
-			if nextRow[to], err = tree.GetField(ctx, iter.primary.valBld.Desc, from, tblVal, iter.primary.mut.NodeStore()); err != nil {
-				return nil, err
+			if val, err = tree.GetField(ctx, iter.primary.valBld.Desc, from, tblVal, iter.primary.mut.NodeStore()); err != nil {
+				return err
 			}
+			row.SetSqlValue(to, val)
 		}
-		return nextRow, nil
+		return nil
 	}
 }
 
@@ -191,32 +195,34 @@ type prollyFkKeylessRowIter struct {
 var _ sql.RowIter = prollyFkKeylessRowIter{}
 
 // Next implements the interface sql.RowIter.
-func (iter prollyFkKeylessRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (iter prollyFkKeylessRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	k, _, err := iter.rangeIter.Next(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if k == nil {
-		return nil, io.EOF
+		return io.EOF
 	}
 	hashId := k.GetField(k.Count() - 1)
 	iter.primary.keyBld.PutHash128(0, hashId)
 	primaryKey := iter.primary.keyBld.Build(sharePool)
 
-	nextRow := make(sql.Row, len(iter.primary.valMap))
+	//nextRow := make(sql.Row, len(iter.primary.valMap))
 	err = iter.primary.mut.Get(ctx, primaryKey, func(tblKey, tblVal val.Tuple) error {
 		for from := range iter.primary.valMap {
 			to := iter.primary.valMap.MapOrdinal(from)
-			if nextRow[to], err = tree.GetField(ctx, iter.primary.valBld.Desc, from+1, tblVal, iter.primary.mut.NodeStore()); err != nil {
+			var val interface{}
+			if val, err = tree.GetField(ctx, iter.primary.valBld.Desc, from+1, tblVal, iter.primary.mut.NodeStore()); err != nil {
 				return err
 			}
+			row.SetSqlValue(to, val)
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return nextRow, nil
+	return nil
 }
 
 // Close implements the interface sql.RowIter.

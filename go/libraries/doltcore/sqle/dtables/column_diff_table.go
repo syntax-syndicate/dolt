@@ -220,7 +220,7 @@ func (d *doltColDiffWorkingSetRowItr) incrementColIndex() {
 	}
 }
 
-func (d *doltColDiffWorkingSetRowItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (d *doltColDiffWorkingSetRowItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	defer d.incrementColIndex()
 
 	// only need to load new changes when we're finished iterating through the previous tableDelta
@@ -232,12 +232,12 @@ func (d *doltColDiffWorkingSetRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 			d.changeSet = "WORKING"
 			d.currentTableDelta = &d.unstagedTableDeltas[d.unstagedIndex]
 		} else {
-			return nil, io.EOF
+			return io.EOF
 		}
 
 		change, err := processTableColDelta(ctx, d.ddb, *d.currentTableDelta)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// ignore changes with no modified columns
@@ -265,8 +265,9 @@ func (d *doltColDiffWorkingSetRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 		nil, // message
 		d.diffTypes[d.colIndex],
 	)
+	row.CopyRange(0, sqlRow)
 
-	return sqlRow, nil
+	return nil
 }
 
 func (d *doltColDiffWorkingSetRowItr) Close(c *sql.Context) error {
@@ -325,32 +326,32 @@ func (itr *doltColDiffCommitHistoryRowItr) incrementIndexes(tableChange tableCol
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *doltColDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *doltColDiffCommitHistoryRowItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for itr.tableChanges == nil {
 		if itr.commits != nil {
 			for _, commit := range itr.commits {
 				err := itr.loadTableChanges(ctx, commit)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 			itr.commits = nil
 		} else if itr.child != nil {
 			_, optCmt, err := itr.child.Next(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			commit, ok := optCmt.ToCommit()
 			if !ok {
-				return nil, doltdb.ErrGhostCommitEncountered
+				return doltdb.ErrGhostCommitEncountered
 			}
 
 			err = itr.loadTableChanges(ctx, commit)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		} else {
-			return nil, io.EOF
+			return io.EOF
 		}
 	}
 
@@ -362,7 +363,7 @@ func (itr *doltColDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, erro
 	col := tableChange.colNames[itr.colIdx]
 	diffType := tableChange.diffTypes[itr.colIdx]
 
-	return sql.NewRow(
+	r := sql.NewRow(
 		h.String(),
 		tableChange.tableName.String(),
 		col,
@@ -371,7 +372,9 @@ func (itr *doltColDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, erro
 		meta.Time(),
 		meta.Description,
 		diffType,
-	), nil
+	)
+	row.CopyRange(0, r)
+	return nil
 }
 
 // loadTableChanges loads the current commit's table changes and metadata into the iterator.
@@ -544,7 +547,8 @@ func calculateColDelta(ctx *sql.Context, ddb *doltdb.DoltDB, delta *diff.TableDe
 	colNamesSet := make(map[string]struct{})
 	// check each row for diffs in modified columns
 	for {
-		r, err := ri.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := ri.Next(ctx, r)
 		if err == io.EOF {
 			for col := range colNamesSet {
 				// append modified columns to result
@@ -564,7 +568,7 @@ func calculateColDelta(ctx *sql.Context, ddb *doltdb.DoltDB, delta *diff.TableDe
 			fromIdx := diffTableCols.TagToIdx[fromColTag]
 
 			toCol := delta.ToSch.GetAllCols().GetByIndex(toIdx)
-			cmp, err := toCol.TypeInfo.ToSqlType().Compare(r[toIdx], r[fromIdx])
+			cmp, err := toCol.TypeInfo.ToSqlType().Compare(r.SqlValue(toIdx), r.SqlValue(fromIdx))
 			if err != nil {
 				return nil, nil, err
 			}

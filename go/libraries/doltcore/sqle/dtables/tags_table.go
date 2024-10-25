@@ -110,9 +110,9 @@ func NewTagsItr(ctx *sql.Context, ddb *doltdb.DoltDB) (*TagsItr, error) {
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *TagsItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *TagsItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if itr.idx >= len(itr.tagsWithHash) {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	defer func() {
@@ -120,7 +120,9 @@ func (itr *TagsItr) Next(ctx *sql.Context) (sql.Row, error) {
 	}()
 
 	twh := itr.tagsWithHash[itr.idx]
-	return sql.NewRow(twh.Tag.Name, twh.Hash.String(), twh.Tag.Meta.Name, twh.Tag.Meta.Email, twh.Tag.Meta.Time(), twh.Tag.Meta.Description), nil
+	r := sql.NewRow(twh.Tag.Name, twh.Hash.String(), twh.Tag.Meta.Name, twh.Tag.Meta.Email, twh.Tag.Meta.Time(), twh.Tag.Meta.Description)
+	row.CopyRange(0, r)
+	return nil
 }
 
 // Close closes the iterator.

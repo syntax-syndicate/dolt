@@ -69,10 +69,10 @@ func getPrimaryKeylessProllyWriter(ctx context.Context, t *doltdb.Table, schStat
 type indexWriter interface {
 	Name() string
 	Map(ctx context.Context) (prolly.Map, error)
-	ValidateKeyViolations(ctx context.Context, sqlRow sql.Row) error
-	Insert(ctx context.Context, sqlRow sql.Row) error
-	Delete(ctx context.Context, sqlRow sql.Row) error
-	Update(ctx context.Context, oldRow sql.Row, newRow sql.Row) error
+	ValidateKeyViolations(ctx context.Context, sqlRow sql.LazyRow) error
+	Insert(ctx context.Context, sqlRow sql.LazyRow) error
+	Delete(ctx context.Context, sqlRow sql.LazyRow) error
+	Update(ctx context.Context, oldRow sql.LazyRow, newRow sql.LazyRow) error
 	Commit(ctx context.Context) error
 	Discard(ctx context.Context) error
 	HasEdits(ctx context.Context) bool
@@ -105,17 +105,17 @@ func (m prollyIndexWriter) Map(ctx context.Context) (prolly.Map, error) {
 	return m.mut.Map(ctx)
 }
 
-func (m prollyIndexWriter) keyFromRow(ctx context.Context, sqlRow sql.Row) (val.Tuple, error) {
+func (m prollyIndexWriter) keyFromRow(ctx context.Context, sqlRow sql.LazyRow) (val.Tuple, error) {
 	for to := range m.keyMap {
 		from := m.keyMap.MapOrdinal(to)
-		if err := tree.PutField(ctx, m.mut.NodeStore(), m.keyBld, to, sqlRow[from]); err != nil {
+		if err := tree.PutField(ctx, m.mut.NodeStore(), m.keyBld, to, sqlRow.SqlValue(from)); err != nil {
 			return nil, err
 		}
 	}
 	return m.keyBld.BuildPermissive(sharePool), nil
 }
 
-func (m prollyIndexWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.Row) error {
+func (m prollyIndexWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.LazyRow) error {
 	k, err := m.keyFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func (m prollyIndexWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql
 	return nil
 }
 
-func (m prollyIndexWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
+func (m prollyIndexWriter) Insert(ctx context.Context, sqlRow sql.LazyRow) error {
 	k, err := m.keyFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func (m prollyIndexWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
 
 	for to := range m.valMap {
 		from := m.valMap.MapOrdinal(to)
-		if err := tree.PutField(ctx, m.mut.NodeStore(), m.valBld, to, sqlRow[from]); err != nil {
+		if err := tree.PutField(ctx, m.mut.NodeStore(), m.valBld, to, sqlRow.SqlValue(from)); err != nil {
 			return err
 		}
 	}
@@ -148,7 +148,7 @@ func (m prollyIndexWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
 	return m.mut.Put(ctx, k, v)
 }
 
-func (m prollyIndexWriter) Delete(ctx context.Context, sqlRow sql.Row) error {
+func (m prollyIndexWriter) Delete(ctx context.Context, sqlRow sql.LazyRow) error {
 	k, err := m.keyFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -157,7 +157,7 @@ func (m prollyIndexWriter) Delete(ctx context.Context, sqlRow sql.Row) error {
 	return m.mut.Delete(ctx, k)
 }
 
-func (m prollyIndexWriter) Update(ctx context.Context, oldRow sql.Row, newRow sql.Row) error {
+func (m prollyIndexWriter) Update(ctx context.Context, oldRow sql.LazyRow, newRow sql.LazyRow) error {
 	oldKey, err := m.keyFromRow(ctx, oldRow)
 	if err != nil {
 		return err
@@ -188,7 +188,7 @@ func (m prollyIndexWriter) Update(ctx context.Context, oldRow sql.Row, newRow sq
 
 	for to := range m.valMap {
 		from := m.valMap.MapOrdinal(to)
-		if err = tree.PutField(ctx, m.mut.NodeStore(), m.valBld, to, newRow[from]); err != nil {
+		if err = tree.PutField(ctx, m.mut.NodeStore(), m.valBld, to, newRow.SqlValue(from)); err != nil {
 			return err
 		}
 	}
@@ -277,7 +277,7 @@ func (m prollySecondaryIndexWriter) Map(ctx context.Context) (prolly.Map, error)
 	return m.mut.Map(ctx)
 }
 
-func (m prollySecondaryIndexWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.Row) error {
+func (m prollySecondaryIndexWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.LazyRow) error {
 	if m.unique {
 		if err := m.checkForUniqueKeyErr(ctx, sqlRow); err != nil {
 			return err
@@ -295,10 +295,10 @@ func (m prollySecondaryIndexWriter) trimKeyPart(to int, keyPart interface{}) int
 	return val.TrimValueToPrefixLength(keyPart, prefixLength)
 }
 
-func (m prollySecondaryIndexWriter) keyFromRow(ctx context.Context, sqlRow sql.Row) (val.Tuple, error) {
+func (m prollySecondaryIndexWriter) keyFromRow(ctx context.Context, sqlRow sql.LazyRow) (val.Tuple, error) {
 	for to := range m.keyMap {
 		from := m.keyMap.MapOrdinal(to)
-		keyPart := m.trimKeyPart(to, sqlRow[from])
+		keyPart := m.trimKeyPart(to, sqlRow.SqlValue(from))
 		if err := tree.PutField(ctx, m.mut.NodeStore(), m.keyBld, to, keyPart); err != nil {
 			return nil, err
 		}
@@ -306,7 +306,7 @@ func (m prollySecondaryIndexWriter) keyFromRow(ctx context.Context, sqlRow sql.R
 	return m.keyBld.Build(sharePool), nil
 }
 
-func (m prollySecondaryIndexWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
+func (m prollySecondaryIndexWriter) Insert(ctx context.Context, sqlRow sql.LazyRow) error {
 	k, err := m.keyFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -314,17 +314,17 @@ func (m prollySecondaryIndexWriter) Insert(ctx context.Context, sqlRow sql.Row) 
 	return m.mut.Put(ctx, k, val.EmptyTuple)
 }
 
-func (m prollySecondaryIndexWriter) checkForUniqueKeyErr(ctx context.Context, sqlRow sql.Row) error {
+func (m prollySecondaryIndexWriter) checkForUniqueKeyErr(ctx context.Context, sqlRow sql.LazyRow) error {
 	ns := m.mut.NodeStore()
 	for to := range m.keyMap[:m.idxCols] {
 		from := m.keyMap.MapOrdinal(to)
-		if sqlRow[from] == nil {
+		if sqlRow.SqlValue(from) == nil {
 			// NULL is incomparable and cannot
 			// trigger a UNIQUE KEY violation
 			m.keyBld.Recycle()
 			return nil
 		}
-		keyPart := m.trimKeyPart(to, sqlRow[from])
+		keyPart := m.trimKeyPart(to, sqlRow.SqlValue(from))
 		if err := tree.PutField(ctx, ns, m.keyBld, to, keyPart); err != nil {
 			return err
 		}
@@ -360,7 +360,7 @@ func (m prollySecondaryIndexWriter) checkForUniqueKeyErr(ctx context.Context, sq
 	}
 }
 
-func (m prollySecondaryIndexWriter) Delete(ctx context.Context, sqlRow sql.Row) error {
+func (m prollySecondaryIndexWriter) Delete(ctx context.Context, sqlRow sql.LazyRow) error {
 	k := m.keyBld.Build(sharePool)
 	k, err := m.keyFromRow(ctx, sqlRow)
 	if err != nil {
@@ -369,7 +369,7 @@ func (m prollySecondaryIndexWriter) Delete(ctx context.Context, sqlRow sql.Row) 
 	return m.mut.Delete(ctx, k)
 }
 
-func (m prollySecondaryIndexWriter) Update(ctx context.Context, oldRow sql.Row, newRow sql.Row) error {
+func (m prollySecondaryIndexWriter) Update(ctx context.Context, oldRow sql.LazyRow, newRow sql.LazyRow) error {
 	oldKey, err := m.keyFromRow(ctx, oldRow)
 	if err != nil {
 		return err

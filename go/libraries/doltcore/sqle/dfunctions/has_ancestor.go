@@ -39,7 +39,7 @@ func NewHasAncestor(head, anc sql.Expression) sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (a *HasAncestor) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (a *HasAncestor) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	if !types.IsText(a.reference.Type()) {
 		return nil, sql.ErrInvalidArgumentDetails.New(a, a.reference)
 	}

@@ -123,36 +123,36 @@ func newLdDiffIter(ctx *sql.Context, ddb *doltdb.DoltDB, joiner *rowconv.Joiner,
 }
 
 // Next returns the next row
-func (itr *ldDiffRowItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *ldDiffRowItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	r, err := itr.diffSrc.NextDiff()
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	toAndFromRows, err := itr.joiner.Split(r)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	_, hasTo := toAndFromRows[diff.To]
 	_, hasFrom := toAndFromRows[diff.From]
 
 	r, err = r.SetColVal(itr.toCommitInfo.nameTag, types.String(itr.toCommitInfo.name), itr.sch)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	r, err = r.SetColVal(itr.fromCommitInfo.nameTag, types.String(itr.fromCommitInfo.name), itr.sch)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if itr.toCommitInfo.date != nil {
 		r, err = r.SetColVal(itr.toCommitInfo.dateTag, *itr.toCommitInfo.date, itr.sch)
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -160,25 +160,27 @@ func (itr *ldDiffRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 		r, err = r.SetColVal(itr.fromCommitInfo.dateTag, *itr.fromCommitInfo.date, itr.sch)
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	sqlRow, err := sqlutil.DoltRowToSqlRow(r, itr.sch)
+	err = sqlutil.DoltRowToSqlRow(r, itr.sch, row)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if hasTo && hasFrom {
-		sqlRow = append(sqlRow, diffTypeModified)
+		row.SetSqlValue(0, diffTypeModified)
 	} else if hasTo && !hasFrom {
-		sqlRow = append(sqlRow, diffTypeAdded)
+		row.SetSqlValue(0, diffTypeAdded)
+
 	} else {
-		sqlRow = append(sqlRow, diffTypeRemoved)
+		row.SetSqlValue(0, diffTypeRemoved)
+
 	}
 
-	return sqlRow, nil
+	return nil
 }
 
 // Close closes the iterator
@@ -312,17 +314,18 @@ func newProllyDiffIter(ctx *sql.Context, dp DiffPartition, targetFromSchema, tar
 	return iter, nil
 }
 
-func (itr prollyDiffIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr prollyDiffIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return ctx.Err()
 	case err := <-itr.errChan:
-		return nil, err
-	case row, ok := <-itr.rows:
+		return err
+	case r, ok := <-itr.rows:
 		if !ok {
-			return nil, io.EOF
+			return io.EOF
 		}
-		return row, nil
+		row.CopyRange(0, r)
+		return nil
 	}
 }
 
@@ -513,28 +516,28 @@ func NewDiffPartitionRowIter(partition *DiffPartition, ddb *doltdb.DoltDB, joine
 	}
 }
 
-func (itr *diffPartitionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *diffPartitionRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for {
 		if itr.currentPartition == nil {
-			return nil, io.EOF
+			return io.EOF
 		}
 		if itr.currentRowIter == nil {
 			rowIter, err := itr.currentPartition.GetRowIter(ctx, itr.ddb, itr.joiner, sql.IndexLookup{})
 			if err != nil {
-				return nil, err
+				return err
 			}
 			itr.currentRowIter = &rowIter
 		}
 
-		row, err := (*itr.currentRowIter).Next(ctx)
+		err := (*itr.currentRowIter).Next(ctx, row)
 		if err == io.EOF {
 			itr.currentPartition = nil
 			itr.currentRowIter = nil
-			return nil, err
+			return err
 		} else if err != nil {
-			return nil, err
+			return err
 		} else {
-			return row, nil
+			return nil
 		}
 	}
 }

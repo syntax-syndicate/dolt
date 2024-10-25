@@ -681,11 +681,11 @@ func (a *binlogReplicaApplier) processRowEvent(ctx *sql.Context, event mysql.Bin
 
 		switch {
 		case event.IsDeleteRows():
-			err = tableWriter.Delete(ctx, identityRow)
+			err = tableWriter.Delete(ctx, sql.NewSqlRowFromRow(identityRow))
 		case event.IsWriteRows():
-			err = tableWriter.Insert(ctx, dataRow)
+			err = tableWriter.Insert(ctx, sql.NewSqlRowFromRow(dataRow))
 		case event.IsUpdateRows():
-			err = tableWriter.Update(ctx, identityRow, dataRow)
+			err = tableWriter.Update(ctx, sql.NewSqlRowFromRow(identityRow), sql.NewSqlRowFromRow(dataRow))
 		}
 		if err != nil {
 			return err
@@ -916,12 +916,13 @@ func convertVitessJsonExpressionString(ctx *sql.Context, value sqltypes.Value) (
 	if err != nil {
 		return nil, err
 	}
-	row, err := rowIter.Next(ctx)
+	row := sql.NewSqlRow(0)
+	err = rowIter.Next(ctx, row)
 	if err != nil {
 		return nil, err
 	}
 
-	return row[0], nil
+	return row.SqlValue(0), nil
 }
 
 func getAllUserDatabaseNames(ctx *sql.Context, engine *gms.Engine) []string {
@@ -989,7 +990,7 @@ func executeQueryWithEngine(ctx *sql.Context, engine *gms.Engine, query string) 
 		return
 	}
 	for {
-		_, err := iter.Next(queryCtx)
+		err := iter.Next(queryCtx, sql.NewSqlRow(0))
 		if err != nil {
 			if err != io.EOF {
 				queryCtx.GetLogger().Errorf("ERROR reading query results: %v ", err.Error())

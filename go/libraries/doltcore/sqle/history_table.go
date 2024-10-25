@@ -276,7 +276,7 @@ func commitFilterForExprs(ctx *sql.Context, filters []sql.Expression) (doltdb.Co
 		r := sql.Row{h.String(), meta.Name, meta.Time()}
 
 		for _, filter := range filters {
-			res, err := filter.Eval(sc, r)
+			res, err := filter.Eval(sc, sql.NewSqlRowFromRow(r))
 			if err != nil {
 				return false, err
 			}
@@ -481,7 +481,7 @@ type historyIter struct {
 	table            sql.Table
 	tablePartitions  sql.PartitionIter
 	currPart         sql.RowIter
-	rowConverter     func(row sql.Row) sql.Row
+	rowConverter     func(row sql.LazyRow)
 	nonExistentTable bool
 }
 
@@ -554,35 +554,36 @@ func (ht *HistoryTable) newRowItrForTableAtCommit(ctx *sql.Context, table *DoltT
 
 // Next retrieves the next row. It will return io.EOF if it's the last row. After retrieving the last row, Close
 // will be automatically closed.
-func (i *historyIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (i *historyIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if i.nonExistentTable {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	if i.currPart == nil {
 		nextPart, err := i.tablePartitions.Next(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		rowIter, err := i.table.PartitionRows(ctx, nextPart)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		i.currPart = rowIter
-		return i.Next(ctx)
+		return i.Next(ctx, row)
 	}
 
-	r, err := i.currPart.Next(ctx)
+	err := i.currPart.Next(ctx, row)
 	if err == io.EOF {
 		i.currPart = nil
-		return i.Next(ctx)
+		return i.Next(ctx, row)
 	} else if err != nil {
-		return nil, err
+		return err
 	}
 
-	return i.rowConverter(r), nil
+	i.rowConverter(row)
+	return nil
 }
 
 func (i *historyIter) Close(ctx *sql.Context) error {
@@ -593,7 +594,7 @@ func (i *historyIter) Close(ctx *sql.Context) error {
 // describes the incoming row, |targetSchema| describes the desired row schema, and |projections| controls which fields
 // are including the returned row. The hash |h| and commit metadata |meta| are used to augment the row with custom
 // fields for the dolt_history table to return commit metadata.
-func (ht *HistoryTable) rowConverter(ctx *sql.Context, srcSchema, targetSchema sql.Schema, h hash.Hash, meta *datas.CommitMeta, projections []uint64) func(row sql.Row) sql.Row {
+func (ht *HistoryTable) rowConverter(ctx *sql.Context, srcSchema, targetSchema sql.Schema, h hash.Hash, meta *datas.CommitMeta, projections []uint64) func(row sql.LazyRow) {
 	srcToTarget := make(map[int]int)
 	for i, col := range targetSchema {
 		srcIdx := srcSchema.IndexOfColName(col.Name)
@@ -612,22 +613,21 @@ func (ht *HistoryTable) rowConverter(ctx *sql.Context, srcSchema, targetSchema s
 		}
 	}
 
-	return func(row sql.Row) sql.Row {
-		r := make(sql.Row, len(projections))
+	return func(row sql.LazyRow) {
 		for i, t := range projections {
 			switch t {
 			case schema.HistoryCommitterTag:
-				r[i] = meta.Name
+				row.SetSqlValue(i, meta.Name)
 			case schema.HistoryCommitDateTag:
-				r[i] = meta.Time()
+				row.SetSqlValue(i, meta.Time())
 			case schema.HistoryCommitHashTag:
-				r[i] = h.String()
+				row.SetSqlValue(i, h.String())
 			default:
 				if j, ok := srcToTarget[i]; ok {
-					r[j] = row[i]
+					row.SetSqlValue(j, row.SqlValue(i))
 				}
 			}
 		}
-		return r
+		return
 	}
 }

@@ -161,15 +161,15 @@ func (tbl BranchNamespaceControlTable) StatementComplete(ctx *sql.Context) error
 }
 
 // Insert implements the interface sql.RowInserter.
-func (tbl BranchNamespaceControlTable) Insert(ctx *sql.Context, row sql.Row) error {
+func (tbl BranchNamespaceControlTable) Insert(ctx *sql.Context, row sql.LazyRow) error {
 	tbl.RWMutex.Lock()
 	defer tbl.RWMutex.Unlock()
 
 	// Database, Branch, and Host are case-insensitive, while user is case-sensitive
-	database := strings.ToLower(branch_control.FoldExpression(row[0].(string)))
-	branch := strings.ToLower(branch_control.FoldExpression(row[1].(string)))
-	user := branch_control.FoldExpression(row[2].(string))
-	host := strings.ToLower(branch_control.FoldExpression(row[3].(string)))
+	database := strings.ToLower(branch_control.FoldExpression(row.SqlValue(0).(string)))
+	branch := strings.ToLower(branch_control.FoldExpression(row.SqlValue(1).(string)))
+	user := branch_control.FoldExpression(row.SqlValue(2).(string))
+	host := strings.ToLower(branch_control.FoldExpression(row.SqlValue(3).(string)))
 
 	// Verify that the lengths of each expression fit within an uint16
 	if len(database) > math.MaxUint16 || len(branch) > math.MaxUint16 || len(user) > math.MaxUint16 || len(host) > math.MaxUint16 {
@@ -197,19 +197,19 @@ func (tbl BranchNamespaceControlTable) Insert(ctx *sql.Context, row sql.Row) err
 }
 
 // Update implements the interface sql.RowUpdater.
-func (tbl BranchNamespaceControlTable) Update(ctx *sql.Context, old sql.Row, new sql.Row) error {
+func (tbl BranchNamespaceControlTable) Update(ctx *sql.Context, old sql.LazyRow, new sql.LazyRow) error {
 	tbl.RWMutex.Lock()
 	defer tbl.RWMutex.Unlock()
 
 	// Database, Branch, and Host are case-insensitive, while User is case-sensitive
-	oldDatabase := strings.ToLower(branch_control.FoldExpression(old[0].(string)))
-	oldBranch := strings.ToLower(branch_control.FoldExpression(old[1].(string)))
-	oldUser := branch_control.FoldExpression(old[2].(string))
-	oldHost := strings.ToLower(branch_control.FoldExpression(old[3].(string)))
-	newDatabase := strings.ToLower(branch_control.FoldExpression(new[0].(string)))
-	newBranch := strings.ToLower(branch_control.FoldExpression(new[1].(string)))
-	newUser := branch_control.FoldExpression(new[2].(string))
-	newHost := strings.ToLower(branch_control.FoldExpression(new[3].(string)))
+	oldDatabase := strings.ToLower(branch_control.FoldExpression(old.SqlValue(0).(string)))
+	oldBranch := strings.ToLower(branch_control.FoldExpression(old.SqlValue(1).(string)))
+	oldUser := branch_control.FoldExpression(old.SqlValue(2).(string))
+	oldHost := strings.ToLower(branch_control.FoldExpression(old.SqlValue(3).(string)))
+	newDatabase := strings.ToLower(branch_control.FoldExpression(new.SqlValue(0).(string)))
+	newBranch := strings.ToLower(branch_control.FoldExpression(new.SqlValue(1).(string)))
+	newUser := branch_control.FoldExpression(new.SqlValue(2).(string))
+	newHost := strings.ToLower(branch_control.FoldExpression(new.SqlValue(3).(string)))
 
 	// Verify that the lengths of each expression fit within an uint16
 	if len(newDatabase) > math.MaxUint16 || len(newBranch) > math.MaxUint16 || len(newUser) > math.MaxUint16 || len(newHost) > math.MaxUint16 {
@@ -259,15 +259,15 @@ func (tbl BranchNamespaceControlTable) Update(ctx *sql.Context, old sql.Row, new
 }
 
 // Delete implements the interface sql.RowDeleter.
-func (tbl BranchNamespaceControlTable) Delete(ctx *sql.Context, row sql.Row) error {
+func (tbl BranchNamespaceControlTable) Delete(ctx *sql.Context, row sql.LazyRow) error {
 	tbl.RWMutex.Lock()
 	defer tbl.RWMutex.Unlock()
 
 	// Database, Branch, and Host are case-insensitive, while User is case-sensitive
-	database := strings.ToLower(branch_control.FoldExpression(row[0].(string)))
-	branch := strings.ToLower(branch_control.FoldExpression(row[1].(string)))
-	user := branch_control.FoldExpression(row[2].(string))
-	host := strings.ToLower(branch_control.FoldExpression(row[3].(string)))
+	database := strings.ToLower(branch_control.FoldExpression(row.SqlValue(0).(string)))
+	branch := strings.ToLower(branch_control.FoldExpression(row.SqlValue(1).(string)))
+	user := branch_control.FoldExpression(row.SqlValue(2).(string))
+	host := strings.ToLower(branch_control.FoldExpression(row.SqlValue(3).(string)))
 
 	// A nil session means we're not in the SQL context, so we allow the deletion in such a case
 	if branchAwareSession := branch_control.GetBranchAwareSession(ctx); branchAwareSession != nil &&

@@ -49,7 +49,7 @@ func (t *HashOfDatabase) Children() []sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (t *HashOfDatabase) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (t *HashOfDatabase) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	var args []string
 	for _, child := range t.children {
 		args = append(args, child.String())

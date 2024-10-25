@@ -51,7 +51,7 @@ func newHashOf(e sql.Expression, name string) sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (t *HashOf) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (t *HashOf) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	val, err := t.Child.Eval(ctx, row)
 
 	if err != nil {

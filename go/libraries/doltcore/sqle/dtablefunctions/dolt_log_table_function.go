@@ -396,7 +396,7 @@ func (ltf *LogTableFunction) invalidArgDetailsErr(reason string) *errors.Error {
 }
 
 // RowIter implements the sql.Node interface
-func (ltf *LogTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (ltf *LogTableFunction) RowIter(ctx *sql.Context, _ sql.LazyRow) (sql.RowIter, error) {
 	revisionValStrs, notRevisionValStrs, threeDot, err := ltf.evaluateArguments()
 	if err != nil {
 		return nil, err
@@ -678,7 +678,7 @@ func (ltf *LogTableFunction) NewDotDotLogTableFunctionRowIter(ctx *sql.Context, 
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *logTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *logTableFunctionRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	var commitHash hash.Hash
 	var commit *doltdb.Commit
 	var optCmt *doltdb.OptionalCommit
@@ -686,12 +686,12 @@ func (itr *logTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 	for {
 		commitHash, optCmt, err = itr.child.Next(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		ok := false
 		commit, ok = optCmt.ToCommit()
 		if !ok {
-			return nil, doltdb.ErrGhostCommitEncountered
+			return doltdb.ErrGhostCommitEncountered
 		}
 
 		if itr.tableNames != nil {
@@ -702,46 +702,46 @@ func (itr *logTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 			}
 			optCmt, err := commit.GetParent(ctx, 0)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			parent0Cm, ok := optCmt.ToCommit()
 			if !ok {
-				return nil, doltdb.ErrGhostCommitEncountered
+				return doltdb.ErrGhostCommitEncountered
 			}
 
 			var parent1Cm *doltdb.Commit
 			if commit.NumParents() > 1 {
 				optCmt, err = commit.GetParent(ctx, 1)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				parent1Cm, ok = optCmt.ToCommit()
 				if !ok {
-					return nil, doltdb.ErrGhostCommitEncountered
+					return doltdb.ErrGhostCommitEncountered
 				}
 			}
 
 			parent0RV, err := parent0Cm.GetRootValue(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			var parent1RV doltdb.RootValue
 			if parent1Cm != nil {
 				parent1RV, err = parent1Cm.GetRootValue(ctx)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 			childRV, err := commit.GetRootValue(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			didChange := false
 			for _, tableName := range itr.tableNames {
 				didChange, err = didTableChangeBetweenRootValues(ctx, childRV, parent0RV, parent1RV, tableName)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if didChange {
 					break
@@ -758,39 +758,43 @@ func (itr *logTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 
 	meta, err := commit.GetCommitMeta(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	row := sql.NewRow(commitHash.String(), meta.Name, meta.Email, meta.Time(), meta.Description)
-
+	row.CopyRange(0, sql.NewRow(commitHash.String(), meta.Name, meta.Email, meta.Time(), meta.Description))
+	i := 5
 	if itr.showParents {
 		prStr, err := getParentsString(ctx, commit)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		row = row.Append(sql.NewRow(prStr))
+		row.CopyRange(i, sql.NewRow(prStr))
+		i++
 	}
 
 	if shouldDecorateWithRefs(itr.decoration) {
 		branchNames := itr.cHashToRefs[commitHash]
 		isHead := itr.headHash == commitHash
-		row = row.Append(sql.NewRow(getRefsString(branchNames, isHead)))
+		row.CopyRange(i, sql.NewRow(getRefsString(branchNames, isHead)))
+		i++
 	}
 
 	if itr.showSignature {
 		if len(meta.Signature) > 0 {
 			out, err := gpg.Verify(ctx, []byte(meta.Signature))
 			if err != nil {
-				return nil, err
+				return err
 			}
 
-			row = row.Append(sql.NewRow(string(out)))
+			row.CopyRange(i, sql.NewRow(string(out)))
+			i++
 		} else {
-			row = row.Append(sql.NewRow(""))
+			row.CopyRange(i, sql.NewRow(""))
+			i++
 		}
 	}
 
-	return row, nil
+	return nil
 }
 
 func (itr *logTableFunctionRowIter) Close(_ *sql.Context) error {

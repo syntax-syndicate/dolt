@@ -133,31 +133,32 @@ func validateTableDataPartition(ctx context.Context, name string, old, new *dolt
 		return err
 	}
 
-	var o, n sql.Row
 	for {
-		o, err = oldIter.Next(sctx)
+		o := sql.NewSqlRow(0)
+		err = oldIter.Next(sctx, o)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return err
 		}
 
-		n, err = newIter.Next(sctx)
+		n := sql.NewSqlRow(0)
+		err = newIter.Next(sctx, n)
 		if err != nil {
 			return err
 		}
 
-		ok, err := equalRows(o, n, newSch)
+		ok, err := equalRows(o.SqlValues(), n.SqlValues(), newSch)
 		if err != nil {
 			return err
 		} else if !ok {
 			return fmt.Errorf("differing rows for table %s (%s != %s)",
-				name, sql.FormatRow(o), sql.FormatRow(n))
+				name, sql.FormatRow(o.SqlValues()), sql.FormatRow(n.SqlValues()))
 		}
 	}
 
 	// validated that newIter is also exhausted
-	_, err = newIter.Next(sctx)
+	err = newIter.Next(sctx, sql.NewSqlRow(0))
 	if err != io.EOF {
 		return fmt.Errorf("differing number of rows for table %s", name)
 	}

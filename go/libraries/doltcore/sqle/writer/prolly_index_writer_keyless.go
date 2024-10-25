@@ -46,11 +46,11 @@ func (k prollyKeylessWriter) Map(ctx context.Context) (prolly.Map, error) {
 }
 
 // ValidateKeyViolations returns nil for keyless writers, because there are no keys, so violations are possible
-func (k prollyKeylessWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.Row) error {
+func (k prollyKeylessWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.LazyRow) error {
 	return nil
 }
 
-func (k prollyKeylessWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
+func (k prollyKeylessWriter) Insert(ctx context.Context, sqlRow sql.LazyRow) error {
 	hashId, value, err := k.tuplesFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func (k prollyKeylessWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
 	return k.mut.Put(ctx, hashId, updated)
 }
 
-func (k prollyKeylessWriter) Delete(ctx context.Context, sqlRow sql.Row) error {
+func (k prollyKeylessWriter) Delete(ctx context.Context, sqlRow sql.LazyRow) error {
 	hashId, _, err := k.tuplesFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -102,7 +102,7 @@ func (k prollyKeylessWriter) Delete(ctx context.Context, sqlRow sql.Row) error {
 	}
 }
 
-func (k prollyKeylessWriter) Update(ctx context.Context, oldRow sql.Row, newRow sql.Row) (err error) {
+func (k prollyKeylessWriter) Update(ctx context.Context, oldRow sql.LazyRow, newRow sql.LazyRow) (err error) {
 	if err = k.Delete(ctx, oldRow); err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (k prollyKeylessWriter) IterRange(ctx context.Context, rng prolly.Range) (p
 	return k.mut.IterRange(ctx, rng)
 }
 
-func (k prollyKeylessWriter) tuplesFromRow(ctx context.Context, sqlRow sql.Row) (hashId, value val.Tuple, err error) {
+func (k prollyKeylessWriter) tuplesFromRow(ctx context.Context, sqlRow sql.LazyRow) (hashId, value val.Tuple, err error) {
 	// initialize cardinality to 0
 	if err = tree.PutField(ctx, k.mut.NodeStore(), k.valBld, 0, uint64(0)); err != nil {
 		return nil, nil, err
@@ -137,7 +137,7 @@ func (k prollyKeylessWriter) tuplesFromRow(ctx context.Context, sqlRow sql.Row) 
 
 	for to := range k.valMap {
 		from := k.valMap.MapOrdinal(to)
-		if err = tree.PutField(ctx, k.mut.NodeStore(), k.valBld, to+1, sqlRow[from]); err != nil {
+		if err = tree.PutField(ctx, k.mut.NodeStore(), k.valBld, to+1, sqlRow.SqlValue(from)); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -207,7 +207,7 @@ func (writer prollyKeylessSecondaryWriter) Map(ctx context.Context) (prolly.Map,
 }
 
 // ValidateKeyViolations implements the interface indexWriter.
-func (writer prollyKeylessSecondaryWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.Row) error {
+func (writer prollyKeylessSecondaryWriter) ValidateKeyViolations(ctx context.Context, sqlRow sql.LazyRow) error {
 	return nil
 }
 
@@ -235,10 +235,10 @@ func (writer prollyKeylessSecondaryWriter) trimKeyPart(to int, keyPart interface
 }
 
 // Insert implements the interface indexWriter.
-func (writer prollyKeylessSecondaryWriter) Insert(ctx context.Context, sqlRow sql.Row) error {
+func (writer prollyKeylessSecondaryWriter) Insert(ctx context.Context, sqlRow sql.LazyRow) error {
 	for to := range writer.keyMap {
 		from := writer.keyMap.MapOrdinal(to)
-		keyPart := writer.trimKeyPart(to, sqlRow[from])
+		keyPart := writer.trimKeyPart(to, sqlRow.SqlValue(from))
 		if err := tree.PutField(ctx, writer.mut.NodeStore(), writer.keyBld, to, keyPart); err != nil {
 			return err
 		}
@@ -295,7 +295,7 @@ func (writer prollyKeylessSecondaryWriter) checkForUniqueKeyError(ctx context.Co
 }
 
 // Delete implements the interface indexWriter.
-func (writer prollyKeylessSecondaryWriter) Delete(ctx context.Context, sqlRow sql.Row) error {
+func (writer prollyKeylessSecondaryWriter) Delete(ctx context.Context, sqlRow sql.LazyRow) error {
 	hashId, cardRow, err := writer.primary.tuplesFromRow(ctx, sqlRow)
 	if err != nil {
 		return err
@@ -312,7 +312,7 @@ func (writer prollyKeylessSecondaryWriter) Delete(ctx context.Context, sqlRow sq
 
 	for to := range writer.keyMap {
 		from := writer.keyMap.MapOrdinal(to)
-		keyPart := writer.trimKeyPart(to, sqlRow[from])
+		keyPart := writer.trimKeyPart(to, sqlRow.SqlValue(from))
 		if err := tree.PutField(ctx, writer.mut.NodeStore(), writer.keyBld, to, keyPart); err != nil {
 			return err
 		}
@@ -330,7 +330,7 @@ func (writer prollyKeylessSecondaryWriter) Delete(ctx context.Context, sqlRow sq
 }
 
 // Update implements the interface indexWriter.
-func (writer prollyKeylessSecondaryWriter) Update(ctx context.Context, oldRow sql.Row, newRow sql.Row) (err error) {
+func (writer prollyKeylessSecondaryWriter) Update(ctx context.Context, oldRow sql.LazyRow, newRow sql.LazyRow) (err error) {
 	if err = writer.Delete(ctx, oldRow); err != nil {
 		return err
 	}

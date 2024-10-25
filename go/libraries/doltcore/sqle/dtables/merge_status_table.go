@@ -146,16 +146,18 @@ func newMergeStatusItr(ctx context.Context, ws *doltdb.WorkingSet) (*MergeStatus
 }
 
 // Next retrieves the next row.
-func (itr *MergeStatusIter) Next(*sql.Context) (sql.Row, error) {
+func (itr *MergeStatusIter) Next(_ *sql.Context, row sql.LazyRow) error {
 	if itr.idx >= 1 {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	defer func() {
 		itr.idx++
 	}()
 
-	return sql.NewRow(itr.isMerging, unwrapString(itr.source), unwrapString(itr.sourceCommit), unwrapString(itr.target), unwrapString(itr.unmergedTables)), nil
+	r := sql.NewRow(itr.isMerging, unwrapString(itr.source), unwrapString(itr.sourceCommit), unwrapString(itr.target), unwrapString(itr.unmergedTables))
+	row.CopyRange(0, r)
+	return nil
 }
 
 func unwrapString(s *string) interface{} {

@@ -29,9 +29,9 @@ import (
 )
 
 // DoltRowToSqlRow constructs a go-mysql-server sql.Row from a Dolt row.Row.
-func DoltRowToSqlRow(doltRow row.Row, sch schema.Schema) (sql.Row, error) {
+func DoltRowToSqlRow(doltRow row.Row, sch schema.Schema, row sql.LazyRow) error {
 	if doltRow == nil {
-		return nil, nil
+		return nil
 	}
 
 	colVals := make(sql.Row, sch.GetAllCols().Size())
@@ -46,14 +46,14 @@ func DoltRowToSqlRow(doltRow row.Row, sch schema.Schema) (sql.Row, error) {
 		return
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return sql.NewRow(colVals...), nil
+	return nil
 }
 
 // SqlRowToDoltRow constructs a Dolt row.Row from a go-mysql-server sql.Row.
-func SqlRowToDoltRow(ctx context.Context, vrw types.ValueReadWriter, r sql.Row, doltSchema schema.Schema) (row.Row, error) {
+func SqlRowToDoltRow(ctx context.Context, vrw types.ValueReadWriter, r sql.LazyRow, doltSchema schema.Schema) (row.Row, error) {
 	if schema.IsKeyless(doltSchema) {
 		return keylessDoltRowFromSqlRow(ctx, vrw, r, doltSchema)
 	}
@@ -62,7 +62,7 @@ func SqlRowToDoltRow(ctx context.Context, vrw types.ValueReadWriter, r sql.Row, 
 
 // DoltKeyValueAndMappingFromSqlRow converts a sql.Row to key and value tuples and keeps a mapping from tag to value that
 // can be used to speed up index key generation for foreign key checks.
-func DoltKeyValueAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.Row, doltSchema schema.Schema) (types.Tuple, types.Tuple, map[uint64]types.Value, error) {
+func DoltKeyValueAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.LazyRow, doltSchema schema.Schema) (types.Tuple, types.Tuple, map[uint64]types.Value, error) {
 	numCols := doltSchema.GetAllCols().Size()
 	vals := make([]types.Value, numCols*2)
 	tagToVal := make(map[uint64]types.Value, numCols)
@@ -73,7 +73,7 @@ func DoltKeyValueAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWr
 	pkVals := vals[numNonPKVals:]
 
 	for i, c := range doltSchema.GetAllCols().GetColumns() {
-		val := r[i]
+		val := r.SqlValue(i)
 		if val == nil {
 			continue
 		}
@@ -126,7 +126,7 @@ func DoltKeyValueAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWr
 
 // DoltKeyAndMappingFromSqlRow converts a sql.Row to key tuple and keeps a mapping from tag to value that
 // can be used to speed up index key generation for foreign key checks.
-func DoltKeyAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.Row, doltSchema schema.Schema) (types.Tuple, map[uint64]types.Value, error) {
+func DoltKeyAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.LazyRow, doltSchema schema.Schema) (types.Tuple, map[uint64]types.Value, error) {
 	if r == nil {
 		return types.EmptyTuple(vrw.Format()), nil, sql.ErrUnexpectedNilRow.New()
 	}
@@ -139,13 +139,13 @@ func DoltKeyAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter,
 	pkVals := make([]types.Value, numPKCols*2)
 	tagToVal := make(map[uint64]types.Value, numCols)
 
-	if len(r) < numCols {
-		numCols = len(r)
+	if r.Count() < numCols {
+		numCols = r.Count()
 	}
 
 	for i := 0; i < numCols; i++ {
 		schCol := allCols.GetByIndex(i)
-		val := r[i]
+		val := r.SqlValue(i)
 		if val == nil {
 			continue
 		}
@@ -163,7 +163,7 @@ func DoltKeyAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter,
 	pkOrds := doltSchema.GetPkOrdinals()
 	for i, pkCol := range pkCols.GetColumns() {
 		ord := pkOrds[i]
-		val := r[ord]
+		val := r.SqlValue(ord)
 		if val == nil {
 			return types.Tuple{}, nil, errors.New("not all pk columns have a value")
 		}
@@ -181,10 +181,10 @@ func DoltKeyAndMappingFromSqlRow(ctx context.Context, vrw types.ValueReadWriter,
 	return keyTuple, tagToVal, nil
 }
 
-func pkDoltRowFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.Row, doltSchema schema.Schema) (row.Row, error) {
+func pkDoltRowFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.LazyRow, doltSchema schema.Schema) (row.Row, error) {
 	taggedVals := make(row.TaggedValues)
 	allCols := doltSchema.GetAllCols()
-	for i, val := range r {
+	for i, val := range r.SqlValues() {
 		tag := allCols.Tags[i]
 		schCol := allCols.TagToCol[tag]
 		if val != nil {
@@ -198,11 +198,11 @@ func pkDoltRowFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, r sql.R
 	return row.New(vrw.Format(), doltSchema, taggedVals)
 }
 
-func keylessDoltRowFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, sqlRow sql.Row, sch schema.Schema) (row.Row, error) {
+func keylessDoltRowFromSqlRow(ctx context.Context, vrw types.ValueReadWriter, sqlRow sql.LazyRow, sch schema.Schema) (row.Row, error) {
 	j := 0
 	vals := make([]types.Value, sch.GetAllCols().Size()*2)
 
-	for idx, val := range sqlRow {
+	for idx, val := range sqlRow.SqlValues() {
 		if val != nil {
 			col := sch.GetAllCols().GetByIndex(idx)
 			nv, err := col.TypeInfo.ConvertValueToNomsValue(ctx, vrw, val)

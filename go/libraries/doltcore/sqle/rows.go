@@ -36,24 +36,27 @@ type keylessRowIter struct {
 	cardIdx     int
 	nonCardCols int
 
-	lastRead sql.Row
+	lastRead sql.LazyRow
 	lastCard uint64
 }
 
-func (k *keylessRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (k *keylessRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if k.lastCard == 0 {
-		r, err := k.keyedIter.Next(ctx)
+		err := k.keyedIter.Next(ctx, row)
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		k.lastCard = r[k.cardIdx].(uint64)
-		k.lastRead = r[:k.nonCardCols]
+		k.lastCard = row.SqlValue(k.cardIdx).(uint64)
+
+		row = row.SelectRange(0, k.nonCardCols)
+		k.lastRead = row
 	}
 
 	k.lastCard--
-	return k.lastRead, nil
+	row.CopyRange(0, k.lastRead)
+	return nil
 }
 
 func (k keylessRowIter) Close(ctx *sql.Context) error {

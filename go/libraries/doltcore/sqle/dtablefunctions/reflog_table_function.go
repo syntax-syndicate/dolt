@@ -58,7 +58,7 @@ func (rltf *ReflogTableFunction) NewInstance(ctx *sql.Context, database sql.Data
 	return node, nil
 }
 
-func (rltf *ReflogTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (rltf *ReflogTableFunction) RowIter(ctx *sql.Context, row sql.LazyRow) (sql.RowIter, error) {
 	sqlDb, ok := rltf.database.(dsess.SqlDatabase)
 	if !ok {
 		return nil, fmt.Errorf("unexpected database type: %T", rltf.database)

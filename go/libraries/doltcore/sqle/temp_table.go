@@ -430,15 +430,15 @@ func (t *TempTable) DropCheck(ctx *sql.Context, chName string) error {
 	return err
 }
 
-func (t *TempTable) Insert(ctx *sql.Context, sqlRow sql.Row) error {
+func (t *TempTable) Insert(ctx *sql.Context, sqlRow sql.LazyRow) error {
 	return t.ed.Insert(ctx, sqlRow)
 }
 
-func (t *TempTable) Update(ctx *sql.Context, oldRow sql.Row, newRow sql.Row) error {
+func (t *TempTable) Update(ctx *sql.Context, oldRow sql.LazyRow, newRow sql.LazyRow) error {
 	return t.ed.Update(ctx, oldRow, newRow)
 }
 
-func (t *TempTable) Delete(ctx *sql.Context, sqlRow sql.Row) error {
+func (t *TempTable) Delete(ctx *sql.Context, sqlRow sql.LazyRow) error {
 	return t.ed.Delete(ctx, sqlRow)
 }
 

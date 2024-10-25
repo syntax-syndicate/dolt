@@ -157,14 +157,15 @@ func printResultSetSummary(numRows int, start time.Time) error {
 func writeResultSet(ctx *sql.Context, rowIter sql.RowIter, wr table.SqlRowWriter) (int, error) {
 	i := 0
 	for {
-		r, err := rowIter.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := rowIter.Next(ctx, r)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return 0, err
 		}
 
-		err = wr.WriteSqlRow(ctx, r)
+		err = wr.WriteSqlRow(ctx, r.SqlValues())
 		if err != nil {
 			return 0, err
 		}
@@ -201,12 +202,13 @@ func printEmptySetResult(start time.Time) {
 }
 
 func printOKResult(ctx *sql.Context, iter sql.RowIter, start time.Time) error {
-	row, err := iter.Next(ctx)
+	row := sql.NewSqlRow(1)
+	err := iter.Next(ctx, row)
 	if err != nil {
 		return err
 	}
 
-	if okResult, ok := row[0].(types.OkResult); ok {
+	if okResult, ok := row.SqlValue(0).(types.OkResult); ok {
 		rowNoun := "row"
 		if okResult.RowsAffected != 1 {
 			rowNoun = "rows"

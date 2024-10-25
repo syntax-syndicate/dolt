@@ -452,7 +452,7 @@ func (cv checkValidator) validateDiff(ctx *sql.Context, diff tree.ThreeWayDiff) 
 			return 0, err
 		}
 
-		result, err := checkExpression.Eval(ctx, row)
+		result, err := checkExpression.Eval(ctx, sql.NewSqlRowFromRow(row))
 		if err != nil {
 			return 0, err
 		}
@@ -1524,7 +1524,7 @@ func writeTupleExpression(
 		return err
 	}
 
-	value, err := expr.Eval(ctx, row)
+	value, err := expr.Eval(ctx, sql.NewSqlRowFromRow(row))
 	if err != nil {
 		return err
 	}

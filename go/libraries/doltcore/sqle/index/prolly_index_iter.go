@@ -88,10 +88,10 @@ func newProllyIndexIter(
 }
 
 // Next returns the next row from the iterator.
-func (p prollyIndexIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (p prollyIndexIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	idxKey, _, err := p.indexIter.Next(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for to := range p.pkMap {
 		from := p.pkMap.MapOrdinal(to)
@@ -99,30 +99,32 @@ func (p prollyIndexIter) Next(ctx *sql.Context) (sql.Row, error) {
 	}
 	pk := p.pkBld.Build(sharePool)
 
-	r := make(sql.Row, len(p.projections))
 	err = p.primary.Get(ctx, pk, func(key, value val.Tuple) error {
-		return p.rowFromTuples(ctx, key, value, r)
+		return p.rowFromTuples(ctx, key, value, row)
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return r, nil
+	return nil
 }
 
-func (p prollyIndexIter) rowFromTuples(ctx context.Context, key, value val.Tuple, r sql.Row) (err error) {
+func (p prollyIndexIter) rowFromTuples(ctx context.Context, key, value val.Tuple, r sql.LazyRow) (err error) {
 	keyDesc, valDesc := p.primary.Descriptors()
 
+	var val interface{}
 	for i, idx := range p.keyMap {
 		outputIdx := p.ordMap[i]
-		r[outputIdx], err = tree.GetField(ctx, keyDesc, idx, key, p.primary.NodeStore())
+		val, err = tree.GetField(ctx, keyDesc, idx, key, p.primary.NodeStore())
 		if err != nil {
 			return err
 		}
+		r.SetSqlValue(outputIdx, val)
 	}
 
 	for i, idx := range p.valMap {
 		outputIdx := p.ordMap[len(p.keyMap)+i]
-		r[outputIdx], err = tree.GetField(ctx, valDesc, idx, value, p.primary.NodeStore())
+		val, err = tree.GetField(ctx, valDesc, idx, value, p.primary.NodeStore())
+		r.SetSqlValue(outputIdx, val)
 		if err != nil {
 			return err
 		}
@@ -212,18 +214,18 @@ func newProllyCoveringIndexIter(
 }
 
 // Next returns the next row from the iterator.
-func (p prollyCoveringIndexIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (p prollyCoveringIndexIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	k, v, err := p.indexIter.Next(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	r := make(sql.Row, len(p.projections))
 	if err := p.writeRowFromTuples(ctx, k, v, r); err != nil {
-		return nil, err
+		return err
 	}
 
-	return r, nil
+	return nil
 }
 
 func (p prollyCoveringIndexIter) writeRowFromTuples(ctx context.Context, key, value val.Tuple, r sql.Row) (err error) {
@@ -347,17 +349,18 @@ func newProllyKeylessIndexIter(
 }
 
 // Next returns the next row from the iterator.
-func (p prollyKeylessIndexIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (p prollyKeylessIndexIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	r, ok := <-p.rowChan
 	if ok {
-		return r, nil
+		row.CopyRange(0, r)
+		return nil
 	}
 
 	if err := p.eg.Wait(); err != nil {
-		return nil, err
+		return err
 	}
 
-	return nil, io.EOF
+	return io.EOF
 }
 
 func (p prollyKeylessIndexIter) queueRows(ctx context.Context) error {

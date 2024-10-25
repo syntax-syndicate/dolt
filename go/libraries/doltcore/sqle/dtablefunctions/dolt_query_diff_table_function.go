@@ -199,7 +199,7 @@ func (tf *QueryDiffTableFunction) compareRows(pkOrds []int, row1, row2 sql.Row) 
 
 // RowIter implements the sql.Node interface
 // TODO: actually implement a row iterator
-func (tf *QueryDiffTableFunction) RowIter(ctx *sql.Context, _ sql.Row) (sql.RowIter, error) {
+func (tf *QueryDiffTableFunction) RowIter(ctx *sql.Context, _ sql.LazyRow) (sql.RowIter, error) {
 	if !tf.schema1.Equals(tf.schema2) {
 		// todo: schema is currently an unreliable source of primary key columns
 		return tf.keylessRowIter()
@@ -213,24 +213,28 @@ func (tf *QueryDiffTableFunction) keylessRowIter() (sql.RowIter, error) {
 	var newRow sql.Row
 	nilRow1, nilRow2 := make(sql.Row, len(tf.schema1)), make(sql.Row, len(tf.schema2))
 	for {
-		row, err := tf.rowIter1.Next(tf.ctx)
+		row_ := sql.NewSqlRow(0)
+		err := tf.rowIter1.Next(tf.ctx, row_)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
+		row := row_.SqlValues()
 		newRow = append(append(row, nilRow2...), "deleted")
 		results = append(results, newRow)
 	}
 	for {
-		row, err := tf.rowIter2.Next(tf.ctx)
+		row_ := sql.NewSqlRow(0)
+		err := tf.rowIter2.Next(tf.ctx, row_)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
+		row := row_.SqlValues()
 		newRow = append(append(nilRow1, row...), "added")
 		results = append(results, newRow)
 	}
@@ -241,14 +245,18 @@ func (tf *QueryDiffTableFunction) keylessRowIter() (sql.RowIter, error) {
 func (tf *QueryDiffTableFunction) pkRowIter() (sql.RowIter, error) {
 	var results []sql.Row
 	var newRow sql.Row
-	row1, err1 := tf.rowIter1.Next(tf.ctx)
-	row2, err2 := tf.rowIter2.Next(tf.ctx)
+	row1_ := sql.NewSqlRow(0)
+	row2_ := sql.NewSqlRow(0)
+	err1 := tf.rowIter1.Next(tf.ctx, row1_)
+	err2 := tf.rowIter2.Next(tf.ctx, row2_)
 	var pkOrds []int
 	for i, col := range tf.schema1 {
 		if col.PrimaryKey {
 			pkOrds = append(pkOrds, i)
 		}
 	}
+	row1 := row1_.SqlValues()
+	row2 := row2_.SqlValues()
 	nilRow := make(sql.Row, len(tf.schema1))
 	for err1 == nil && err2 == nil {
 		cmp, d, err := tf.compareRows(pkOrds, row1, row2)
@@ -259,18 +267,22 @@ func (tf *QueryDiffTableFunction) pkRowIter() (sql.RowIter, error) {
 		case -1: // deleted
 			newRow = append(append(row1, nilRow...), "deleted")
 			results = append(results, newRow)
-			row1, err1 = tf.rowIter1.Next(tf.ctx)
+			err1 = tf.rowIter1.Next(tf.ctx, row1_)
+			row1 = row1_.SqlValues()
 		case 1: // added
 			newRow = append(append(nilRow, row2...), "added")
 			results = append(results, newRow)
-			row2, err2 = tf.rowIter2.Next(tf.ctx)
+			err2 = tf.rowIter2.Next(tf.ctx, row2_)
+			row2 = row2_.SqlValues()
 		default: // modified or no change
 			if d {
 				newRow = append(append(row1, row2...), "modified")
 				results = append(results, newRow)
 			}
-			row1, err1 = tf.rowIter1.Next(tf.ctx)
-			row2, err2 = tf.rowIter2.Next(tf.ctx)
+			err1 = tf.rowIter1.Next(tf.ctx, row1_)
+			row1 = row1_.SqlValues()
+			err2 = tf.rowIter2.Next(tf.ctx, row2_)
+			row2 = row2_.SqlValues()
 		}
 	}
 
@@ -281,7 +293,8 @@ func (tf *QueryDiffTableFunction) pkRowIter() (sql.RowIter, error) {
 		newRow = append(append(nilRow, row2...), "added")
 		results = append(results, newRow)
 		for {
-			row2, err2 = tf.rowIter2.Next(tf.ctx)
+			err2 = tf.rowIter2.Next(tf.ctx, row2_)
+			row2 = row2_.SqlValues()
 			if err2 == io.EOF {
 				break
 			}
@@ -292,7 +305,8 @@ func (tf *QueryDiffTableFunction) pkRowIter() (sql.RowIter, error) {
 		newRow = append(append(row1, nilRow...), "deleted")
 		results = append(results, newRow)
 		for {
-			row1, err1 = tf.rowIter1.Next(tf.ctx)
+			err1 = tf.rowIter1.Next(tf.ctx, row1_)
+			row1 = row1_.SqlValues()
 			if err1 == io.EOF {
 				break
 			}

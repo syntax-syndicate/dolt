@@ -71,10 +71,10 @@ func (l *countAggKvIter) Close(_ *sql.Context) error {
 	return nil
 }
 
-func (l *countAggKvIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (l *countAggKvIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	// will return one value
 	if l.done {
-		return nil, io.EOF
+		return io.EOF
 	}
 	var cnt int64
 	for {
@@ -82,7 +82,7 @@ func (l *countAggKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return nil, err
+			return err
 		}
 		if l.nullable {
 			if l.isKeyRef && k.FieldIsNull(l.idx) ||
@@ -93,5 +93,6 @@ func (l *countAggKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 		cnt++
 	}
 	l.done = true
-	return sql.Row{cnt}, nil
+	row.SetSqlValue(0, cnt)
+	return nil
 }

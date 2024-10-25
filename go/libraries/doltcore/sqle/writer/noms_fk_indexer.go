@@ -68,14 +68,16 @@ func (n *nomsFkIndexer) PartitionRows(ctx *sql.Context, partition sql.Partition)
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]sql.Row, len(dRows))
+	rows := make([]sql.LazyRow, len(dRows))
 	for i, dRow := range dRows {
-		rows[i], err = sqlutil.DoltRowToSqlRow(dRow, n.writer.sch)
+		row := sql.NewSqlRow(0)
+		err = sqlutil.DoltRowToSqlRow(dRow, n.writer.sch, row)
 		if err != nil {
 			return nil, err
 		}
+		rows[i] = row
 	}
-	return sql.RowsToRowIter(rows...), err
+	return sql.LazyRowsToRowIter(rows...), err
 }
 
 // fkDummyPartition is used to return a partition that will be ignored, as a foreign key indexer does not handle

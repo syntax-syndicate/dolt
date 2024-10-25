@@ -183,9 +183,9 @@ func NewBranchItr(ctx *sql.Context, table *BranchesTable) (*BranchItr, error) {
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *BranchItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *BranchItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if itr.idx >= len(itr.commits) {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	defer func() {
@@ -197,23 +197,25 @@ func (itr *BranchItr) Next(ctx *sql.Context) (sql.Row, error) {
 	meta, err := cm.GetCommitMeta(ctx)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	h, err := cm.HashOf()
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	remoteBranches := itr.table.remote
 	if remoteBranches {
-		return sql.NewRow(name, h.String(), meta.Name, meta.Email, meta.Time(), meta.Description), nil
+		r := sql.NewRow(name, h.String(), meta.Name, meta.Email, meta.Time(), meta.Description)
+		row.CopyRange(0, r)
+		return nil
 	} else {
 		branches, err := itr.table.db.DbData().Rsr.GetBranches()
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		remoteName := ""
@@ -223,7 +225,9 @@ func (itr *BranchItr) Next(ctx *sql.Context) (sql.Row, error) {
 			remoteName = branch.Remote
 			branchName = branch.Merge.Ref.GetPath()
 		}
-		return sql.NewRow(name, h.String(), meta.Name, meta.Email, meta.Time(), meta.Description, remoteName, branchName), nil
+		r := sql.NewRow(name, h.String(), meta.Name, meta.Email, meta.Time(), meta.Description, remoteName, branchName)
+		row.CopyRange(0, r)
+		return nil
 	}
 }
 
@@ -268,19 +272,19 @@ type branchWriter struct {
 // Insert inserts the row given, returning an error if it cannot. Insert will be called once for each row to process
 // for the insert operation, which may involve many rows. After all rows in an operation have been processed, Close
 // is called.
-func (bWr branchWriter) Insert(ctx *sql.Context, r sql.Row) error {
+func (bWr branchWriter) Insert(ctx *sql.Context, r sql.LazyRow) error {
 	return fmt.Errorf("the dolt_branches table is read-only; use the dolt_branch stored procedure to edit remotes")
 }
 
 // Update the given row. Provides both the old and new rows.
-func (bWr branchWriter) Update(ctx *sql.Context, old sql.Row, new sql.Row) error {
+func (bWr branchWriter) Update(ctx *sql.Context, old sql.LazyRow, new sql.LazyRow) error {
 	return fmt.Errorf("the dolt_branches table is read-only; use the dolt_branch stored procedure to edit remotes")
 }
 
 // Delete deletes the given row. Returns ErrDeleteRowNotFound if the row was not found. Delete will be called once for
 // each row to process for the delete operation, which may involve many rows. After all rows have been processed,
 // Close is called.
-func (bWr branchWriter) Delete(ctx *sql.Context, r sql.Row) error {
+func (bWr branchWriter) Delete(ctx *sql.Context, r sql.LazyRow) error {
 	return fmt.Errorf("the dolt_branches table is read-only; use the dolt_branch stored procedure to edit remotes")
 }
 

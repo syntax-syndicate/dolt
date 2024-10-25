@@ -140,7 +140,7 @@ func NewTestEngine(dEnv *env.DoltEnv, ctx context.Context, db dsess.SqlDatabase)
 }
 
 // ExecuteSelect executes the select statement given and returns the resulting rows, or an error if one is encountered.
-func ExecuteSelect(dEnv *env.DoltEnv, root doltdb.RootValue, query string) ([]sql.Row, error) {
+func ExecuteSelect(dEnv *env.DoltEnv, root doltdb.RootValue, query string) ([]sql.LazyRow, error) {
 	dbData := env.DbData{
 		Ddb: dEnv.DoltDB,
 		Rsw: dEnv.RepoStateWriter(),
@@ -169,11 +169,16 @@ func ExecuteSelect(dEnv *env.DoltEnv, root doltdb.RootValue, query string) ([]sq
 	}
 
 	var (
-		rows   []sql.Row
+		rows   []sql.LazyRow
 		rowErr error
-		row    sql.Row
+		row    sql.LazyRow
 	)
-	for row, rowErr = rowIter.Next(ctx); rowErr == nil; row, rowErr = rowIter.Next(ctx) {
+	for {
+		row = sql.NewSqlRow(0)
+		rowErr = rowIter.Next(ctx, row)
+		if err != nil {
+			break
+		}
 		rows = append(rows, row)
 	}
 
@@ -191,7 +196,7 @@ func ToSqlRows(sch schema.Schema, rs ...row.Row) []sql.Row {
 	sqlRows := make([]sql.Row, len(rs))
 	compressedSch := CompressSchema(sch)
 	for i := range rs {
-		sqlRows[i], _ = sqlutil.DoltRowToSqlRow(CompressRow(sch, rs[i]), compressedSch)
+		_ = sqlutil.DoltRowToSqlRow(CompressRow(sch, rs[i]), compressedSch, nil)
 	}
 	return sqlRows
 }
@@ -306,7 +311,7 @@ func DoltTableFromAlterableTable(ctx *sql.Context, t *AlterableDoltTable) *doltd
 
 func drainIter(ctx *sql.Context, iter sql.RowIter) error {
 	for {
-		_, err := iter.Next(ctx)
+		err := iter.Next(ctx, sql.NewSqlRow(0))
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -499,9 +504,9 @@ func CreateTestDatabase() (*env.DoltEnv, error) {
 	return dEnv, nil
 }
 
-func SqlRowsFromDurableIndex(idx durable.Index, sch schema.Schema) ([]sql.Row, error) {
+func SqlRowsFromDurableIndex(idx durable.Index, sch schema.Schema) ([]sql.LazyRow, error) {
 	ctx := context.Background()
-	var sqlRows []sql.Row
+	var sqlRows []sql.LazyRow
 	if types.Format_Default == types.Format_DOLT {
 		rowData := durable.ProllyMapFromIndex(idx)
 		kd, vd := rowData.Descriptors()
@@ -532,7 +537,8 @@ func SqlRowsFromDurableIndex(idx durable.Index, sch schema.Schema) ([]sql.Row, e
 			if err != nil {
 				return err
 			}
-			sqlRow, err := sqlutil.DoltRowToSqlRow(r, sch)
+			sqlRow := sql.NewSqlRow(0)
+			err = sqlutil.DoltRowToSqlRow(r, sch, sqlRow)
 			if err != nil {
 				return err
 			}
@@ -543,19 +549,21 @@ func SqlRowsFromDurableIndex(idx durable.Index, sch schema.Schema) ([]sql.Row, e
 	return sqlRows, nil
 }
 
-func sqlRowFromTuples(sch schema.Schema, kd, vd val.TupleDesc, k, v val.Tuple) (sql.Row, error) {
+func sqlRowFromTuples(sch schema.Schema, kd, vd val.TupleDesc, k, v val.Tuple) (sql.LazyRow, error) {
 	var err error
 	ctx := context.Background()
-	r := make(sql.Row, sch.GetAllCols().Size())
+	r := sql.NewSqlRow(sch.GetAllCols().Size())
 	keyless := schema.IsKeyless(sch)
 
+	var val interface{}
 	for i, col := range sch.GetAllCols().GetColumns() {
 		pos, ok := sch.GetPKCols().TagToIdx[col.Tag]
 		if ok {
-			r[i], err = tree.GetField(ctx, kd, pos, k, nil)
+			val, err = tree.GetField(ctx, kd, pos, k, nil)
 			if err != nil {
 				return nil, err
 			}
+			r.SetSqlValue(i, val)
 		}
 
 		pos, ok = sch.GetNonPKCols().TagToIdx[col.Tag]
@@ -563,10 +571,11 @@ func sqlRowFromTuples(sch schema.Schema, kd, vd val.TupleDesc, k, v val.Tuple) (
 			pos += 1 // compensate for cardinality field
 		}
 		if ok {
-			r[i], err = tree.GetField(ctx, vd, pos, v, nil)
+			val, err = tree.GetField(ctx, vd, pos, v, nil)
 			if err != nil {
 				return nil, err
 			}
+			r.SetSqlValue(i, val)
 		}
 	}
 	return r, nil

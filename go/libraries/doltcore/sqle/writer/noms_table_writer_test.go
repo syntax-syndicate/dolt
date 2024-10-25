@@ -193,7 +193,7 @@ func TestTableEditor(t *testing.T) {
 }
 
 func r(r row.Row, sch schema.Schema) sql.Row {
-	sqlRow, err := sqlutil.DoltRowToSqlRow(r, sch)
+	err := sqlutil.DoltRowToSqlRow(r, sch, nil)
 	if err != nil {
 		panic(err)
 	}

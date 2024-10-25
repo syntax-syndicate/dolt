@@ -133,9 +133,9 @@ func NewRemoteItr(ctx *sql.Context, ddb *doltdb.DoltDB) (*RemoteItr, error) {
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *RemoteItr) Next(*sql.Context) (sql.Row, error) {
+func (itr *RemoteItr) Next(_ *sql.Context, row sql.LazyRow) error {
 	if itr.idx >= len(itr.remotes) {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	defer func() {
@@ -146,14 +146,16 @@ func (itr *RemoteItr) Next(*sql.Context) (sql.Row, error) {
 
 	fs, _, err := types.JSON.Convert(remote.FetchSpecs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	params, _, err := types.JSON.Convert(remote.Params)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return sql.NewRow(remote.Name, remote.Url, fs, params), nil
+	r := sql.NewRow(remote.Name, remote.Url, fs, params)
+	row.CopyRange(0, r)
+	return nil
 }
 
 // Close closes the iterator.
@@ -197,19 +199,19 @@ type remoteWriter struct {
 // Insert inserts the row given, returning an error if it cannot. Insert will be called once for each row to process
 // for the insert operation, which may involve many rows. After all rows in an operation have been processed, Close
 // is called.
-func (bWr remoteWriter) Insert(ctx *sql.Context, r sql.Row) error {
+func (bWr remoteWriter) Insert(ctx *sql.Context, r sql.LazyRow) error {
 	return fmt.Errorf("the dolt_remotes table is read-only; use the dolt_remote stored procedure to edit remotes")
 }
 
 // Update the given row. Provides both the old and new rows.
-func (bWr remoteWriter) Update(ctx *sql.Context, old sql.Row, new sql.Row) error {
+func (bWr remoteWriter) Update(ctx *sql.Context, old sql.LazyRow, new sql.LazyRow) error {
 	return fmt.Errorf("the dolt_remotes table is read-only; use the dolt_remote stored procedure to edit remotes")
 }
 
 // Delete deletes the given row. Returns ErrDeleteRowNotFound if the row was not found. Delete will be called once for
 // each row to process for the delete operation, which may involve many rows. After all rows have been processed,
 // Close is called.
-func (bWr remoteWriter) Delete(ctx *sql.Context, r sql.Row) error {
+func (bWr remoteWriter) Delete(ctx *sql.Context, r sql.LazyRow) error {
 	return fmt.Errorf("the dolt_remotes table is read-only; use the dolt_remote stored procedure to edit remotes")
 }
 

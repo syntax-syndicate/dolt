@@ -218,7 +218,7 @@ type doltDiffWorkingSetRowItr struct {
 	unstagedTableDeltas []diff.TableDelta
 }
 
-func (d *doltDiffWorkingSetRowItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (d *doltDiffWorkingSetRowItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	var changeSet string
 	var tableDelta diff.TableDelta
 	if d.stagedIndex < len(d.stagedTableDeltas) {
@@ -230,12 +230,12 @@ func (d *doltDiffWorkingSetRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 		tableDelta = d.unstagedTableDeltas[d.unstagedIndex]
 		d.unstagedIndex++
 	} else {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	change, err := tableDelta.GetSummary(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	sqlRow := sql.NewRow(
@@ -249,7 +249,9 @@ func (d *doltDiffWorkingSetRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 		change.SchemaChange,
 	)
 
-	return sqlRow, nil
+	row.CopyRange(0, sqlRow)
+
+	return nil
 }
 
 func (d *doltDiffWorkingSetRowItr) Close(c *sql.Context) error {
@@ -318,7 +320,7 @@ func (itr *doltDiffCommitHistoryRowItr) incrementIndexes() {
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *doltDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *doltDiffCommitHistoryRowItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	defer itr.incrementIndexes()
 
 	for itr.tableChanges == nil {
@@ -326,32 +328,32 @@ func (itr *doltDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, error) 
 			for _, commit := range itr.commits {
 				err := itr.loadTableChanges(ctx, commit)
 				if err != nil {
-					return nil, err
+					return err
 				}
 			}
 			itr.commits = nil
 		} else if itr.child != nil {
 			_, optCmt, err := itr.child.Next(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			commit, ok := optCmt.ToCommit()
 			if !ok {
-				return nil, io.EOF
+				return io.EOF
 			}
 
 			err = itr.loadTableChanges(ctx, commit)
 			if err == doltdb.ErrGhostCommitEncountered {
 				// When showing the diff table in a shallow clone, we show as much of the dolt_history_{table} as we can,
 				// and don't consider it an error when we hit a ghost commit.
-				return nil, io.EOF
+				return io.EOF
 			}
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 		} else {
-			return nil, io.EOF
+			return io.EOF
 		}
 	}
 
@@ -359,7 +361,7 @@ func (itr *doltDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, error) 
 	meta := itr.meta
 	h := itr.hash
 
-	return sql.NewRow(
+	r := sql.NewRow(
 		h.String(),
 		tableChange.TableName.String(),
 		meta.Name,
@@ -368,7 +370,9 @@ func (itr *doltDiffCommitHistoryRowItr) Next(ctx *sql.Context) (sql.Row, error) 
 		meta.Description,
 		tableChange.DataChange,
 		tableChange.SchemaChange,
-	), nil
+	)
+	row.CopyRange(0, r)
+	return nil
 }
 
 // loadTableChanges loads the current commit's table changes and metadata
@@ -481,7 +485,7 @@ func commitFilterForDiffTableFilterExprs(filters []sql.Expression) (doltdb.Commi
 			return false, err
 		}
 		for _, filter := range filters {
-			res, err := filter.Eval(sc, sql.Row{h.String(), meta.Name, meta.Time()})
+			res, err := filter.Eval(sc, sql.NewSqlRowFromRow(sql.Row{h.String(), meta.Name, meta.Time()}))
 			if err != nil {
 				return false, err
 			}

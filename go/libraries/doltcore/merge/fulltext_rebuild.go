@@ -259,8 +259,12 @@ func rebuildFullTextIndexesForTable(ctx *sql.Context, tableToRebuild rebuildable
 		}
 		defer rowIter.Close(ctx)
 
-		row, err := rowIter.Next(ctx)
-		for ; err == nil; row, err = rowIter.Next(ctx) {
+		for {
+			row := sql.NewSqlRow(0)
+			err := rowIter.Next(ctx, row)
+			if err != nil {
+				break
+			}
 			if err = ftEditor.Insert(ctx, row); err != nil {
 				return err
 			}

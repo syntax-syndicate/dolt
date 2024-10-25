@@ -214,13 +214,16 @@ func migrateDoltProceduresSchema(ctx *sql.Context, db Database, oldTable *Writab
 
 	var newRows []sql.Row
 	for {
-		sqlRow, err := iter.Next(ctx)
+		sqlRow_ := sql.NewSqlRow(0)
+		err := iter.Next(ctx, sqlRow_)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
+
+		sqlRow := sqlRow_.SqlValues()
 
 		newRow := make(sql.Row, ProceduresTableSchema().GetAllCols().Size())
 		newRow[0] = sqlRow[nameIdx]
@@ -263,7 +266,7 @@ func migrateDoltProceduresSchema(ctx *sql.Context, db Database, oldTable *Writab
 
 	inserter := wrapper.backingTable.Inserter(ctx)
 	for _, row := range newRows {
-		err = inserter.Insert(ctx, row)
+		err = inserter.Insert(ctx, sql.NewSqlRowFromRow(row))
 		if err != nil {
 			return nil, err
 		}
@@ -338,18 +341,19 @@ func DoltProceduresGetAll(ctx *sql.Context, db Database, procedureName string) (
 		}
 	}()
 
-	var sqlRow sql.Row
 	var details []sql.StoredProcedureDetails
 	missingValue := errors.NewKind("missing `%s` value for procedure row: (%s)")
 
 	for {
-		sqlRow, err = iter.Next(ctx)
+		sqlRow_ := sql.NewSqlRow(0)
+		err = iter.Next(ctx, sqlRow_)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
+		sqlRow := sqlRow_.SqlValues()
 
 		var d sql.StoredProcedureDetails
 		var ok bool
@@ -401,13 +405,14 @@ func DoltProceduresAddProcedure(ctx *sql.Context, db Database, spd sql.StoredPro
 			retErr = err
 		}
 	}()
-	return inserter.Insert(ctx, sql.Row{
+	r := sql.NewSqlRowFromRow(sql.Row{
 		strings.ToLower(spd.Name),
 		spd.CreateStatement,
 		spd.CreatedAt.UTC(),
 		spd.ModifiedAt.UTC(),
 		spd.SqlMode,
 	})
+	return inserter.Insert(ctx, r)
 }
 
 // DoltProceduresDropProcedure removes the stored procedure from the `dolt_procedures` table. The procedure named must
@@ -435,7 +440,7 @@ func DoltProceduresDropProcedure(ctx *sql.Context, db Database, name string) (re
 			retErr = err
 		}
 	}()
-	return deleter.Delete(ctx, sql.Row{name})
+	return deleter.Delete(ctx, sql.NewSqlRowFromRow(sql.Row{name}))
 }
 
 // DoltProceduresGetDetails returns the stored procedure with the given name from `dolt_procedures` if it exists.
@@ -471,16 +476,17 @@ func DoltProceduresGetDetails(ctx *sql.Context, tbl *WritableDoltTable, name str
 		}
 	}()
 
-	sqlRow, err := rowIter.Next(ctx)
+	sqlRow := sql.NewSqlRow(5)
+	err = rowIter.Next(ctx, sqlRow)
 	if err == nil {
-		if len(sqlRow) != 5 {
+		if sqlRow.Count() != 5 {
 			return sql.StoredProcedureDetails{}, false, fmt.Errorf("unexpected row in dolt_procedures:\n%v", sqlRow)
 		}
 		return sql.StoredProcedureDetails{
-			Name:            sqlRow[0].(string),
-			CreateStatement: sqlRow[1].(string),
-			CreatedAt:       sqlRow[2].(time.Time),
-			ModifiedAt:      sqlRow[3].(time.Time),
+			Name:            sqlRow.SqlValue(0).(string),
+			CreateStatement: sqlRow.SqlValue(1).(string),
+			CreatedAt:       sqlRow.SqlValue(2).(time.Time),
+			ModifiedAt:      sqlRow.SqlValue(3).(time.Time),
 		}, true, nil
 	} else if err == io.EOF {
 		return sql.StoredProcedureDetails{}, false, nil

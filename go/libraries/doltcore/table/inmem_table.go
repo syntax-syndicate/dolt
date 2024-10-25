@@ -144,7 +144,12 @@ func (rd *InMemTableReader) ReadSqlRow(ctx context.Context) (sql.Row, error) {
 		return nil, err
 	}
 
-	return sqlutil.DoltRowToSqlRow(r, rd.GetSchema())
+	row := sql.NewSqlRow(0)
+	err = sqlutil.DoltRowToSqlRow(r, rd.GetSchema(), row)
+	if err != nil {
+		return nil, err
+	}
+	return row.SqlValues(), nil
 }
 
 // Close should release resources being held

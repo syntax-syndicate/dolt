@@ -156,39 +156,41 @@ func NewCommitAncestorsRowItr(sqlCtx *sql.Context, ddb *doltdb.DoltDB) (*CommitA
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr *CommitAncestorsRowItr) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *CommitAncestorsRowItr) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if len(itr.cache) == 0 {
 		ch, optCmt, err := itr.itr.Next(ctx)
 		if err != nil {
 			// When complete itr.Next will return io.EOF
-			return nil, err
+			return err
 		}
 
 		cm, ok := optCmt.ToCommit()
 		if !ok {
-			return nil, doltdb.ErrGhostCommitEncountered
+			return doltdb.ErrGhostCommitEncountered
 		}
 
 		parents, err := itr.ddb.ResolveAllParents(ctx, cm)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if len(parents) == 0 {
 			// init commit
-			return sql.NewRow(ch.String(), nil, 0), nil
+			r := sql.NewRow(ch.String(), nil, 0)
+			row.CopyRange(0, r)
+			return nil
 		}
 
 		itr.cache = make([]sql.Row, len(parents))
 		for i, optParent := range parents {
 			p, ok := optParent.ToCommit()
 			if !ok {
-				return nil, doltdb.ErrGhostCommitEncountered
+				return doltdb.ErrGhostCommitEncountered
 			}
 
 			ph, err := p.HashOf()
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			itr.cache[i] = sql.NewRow(ch.String(), ph.String(), int32(i))
@@ -197,7 +199,8 @@ func (itr *CommitAncestorsRowItr) Next(ctx *sql.Context) (sql.Row, error) {
 
 	r := itr.cache[0]
 	itr.cache = itr.cache[1:]
-	return r, nil
+	row.CopyRange(0, r)
+	return nil
 }
 
 // Close closes the iterator.

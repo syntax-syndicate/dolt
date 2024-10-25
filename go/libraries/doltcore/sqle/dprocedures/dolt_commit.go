@@ -221,7 +221,7 @@ func doDoltCommit(ctx *sql.Context, args []string) (string, bool, error) {
 	return h.String(), false, nil
 }
 
-func getDoltArgs(ctx *sql.Context, row sql.Row, children []sql.Expression) ([]string, error) {
+func getDoltArgs(ctx *sql.Context, row sql.LazyRow, children []sql.Expression) ([]string, error) {
 	args := make([]string, len(children))
 	for i := range children {
 		childVal, err := children[i].Eval(ctx, row)

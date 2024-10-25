@@ -45,7 +45,8 @@ func loadStats(ctx *sql.Context, db dsess.SqlDatabase, m prolly.Map) (map[sql.St
 	}
 	currentStat := statspro.NewDoltStats()
 	for {
-		row, err := iter.Next(ctx)
+		row := sql.NewSqlRow(int(schema.StatsMcvCountsTag))
+		err := iter.Next(ctx, row)
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
@@ -53,19 +54,19 @@ func loadStats(ctx *sql.Context, db dsess.SqlDatabase, m prolly.Map) (map[sql.St
 		}
 
 		// deserialize K, V
-		dbName := row[schema.StatsDbTag].(string)
-		tableName := row[schema.StatsTableTag].(string)
-		indexName := row[schema.StatsIndexTag].(string)
-		_ = row[schema.StatsVersionTag]
-		commit := hash.Parse(row[schema.StatsCommitHashTag].(string))
-		rowCount := row[schema.StatsRowCountTag].(uint64)
-		distinctCount := row[schema.StatsDistinctCountTag].(uint64)
-		nullCount := row[schema.StatsNullCountTag].(uint64)
-		columns := strings.Split(row[schema.StatsColumnsTag].(string), ",")
-		typesStr := row[schema.StatsTypesTag].(string)
-		boundRowStr := row[schema.StatsUpperBoundTag].(string)
-		upperBoundCnt := row[schema.StatsUpperBoundCntTag].(uint64)
-		createdAt := row[schema.StatsCreatedAtTag].(time.Time)
+		dbName := row.SqlValue(int(schema.StatsDbTag)).(string)
+		tableName := row.SqlValue(int(schema.StatsTableTag)).(string)
+		indexName := row.SqlValue(int(schema.StatsIndexTag)).(string)
+		_ = row.SqlValue(int(schema.StatsVersionTag))
+		commit := hash.Parse(row.SqlValue(int(schema.StatsCommitHashTag)).(string))
+		rowCount := row.SqlValue(int(schema.StatsRowCountTag)).(uint64)
+		distinctCount := row.SqlValue(int(schema.StatsDistinctCountTag)).(uint64)
+		nullCount := row.SqlValue(int(schema.StatsNullCountTag)).(uint64)
+		columns := strings.Split(row.SqlValue(int(schema.StatsColumnsTag)).(string), ",")
+		typesStr := row.SqlValue(int(schema.StatsTypesTag)).(string)
+		boundRowStr := row.SqlValue(int(schema.StatsUpperBoundTag)).(string)
+		upperBoundCnt := row.SqlValue(int(schema.StatsUpperBoundCntTag)).(uint64)
+		createdAt := row.SqlValue(int(schema.StatsCreatedAtTag)).(time.Time)
 
 		typs := strings.Split(typesStr, "\n")
 		for i, t := range typs {
@@ -100,7 +101,7 @@ func loadStats(ctx *sql.Context, db dsess.SqlDatabase, m prolly.Map) (map[sql.St
 
 		numMcvs := schema.StatsMcvCountsTag - schema.StatsMcv1Tag
 
-		mcvCountsStr := strings.Split(row[schema.StatsMcvCountsTag].(string), ",")
+		mcvCountsStr := strings.Split(row.SqlValue(int(schema.StatsMcvCountsTag)).(string), ",")
 		mcvCnts := make([]uint64, numMcvs)
 		for i, v := range mcvCountsStr {
 			if v == "" {
@@ -114,7 +115,7 @@ func loadStats(ctx *sql.Context, db dsess.SqlDatabase, m prolly.Map) (map[sql.St
 		}
 
 		mcvs := make([]sql.Row, numMcvs)
-		for i, v := range row[schema.StatsMcv1Tag:schema.StatsMcvCountsTag] {
+		for i, v := range row.SqlValues()[schema.StatsMcv1Tag:schema.StatsMcvCountsTag] {
 			if v != nil && v != "" {
 				row, err := DecodeRow(ctx, m.NodeStore(), v.(string), currentStat.Tb)
 				if err != nil {

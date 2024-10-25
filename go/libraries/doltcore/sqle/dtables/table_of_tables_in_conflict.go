@@ -75,13 +75,14 @@ func (p *tableInConflict) Key() []byte {
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (p *tableInConflict) Next(*sql.Context) (sql.Row, error) {
+func (p *tableInConflict) Next(_ *sql.Context, row sql.LazyRow) error {
 	if p.done {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	p.done = true
-	return sql.NewRow(p.name, p.size), nil
+	row.CopyRange(0, sql.NewRow(p.name, p.size))
+	return nil
 }
 
 // Close the iterator.

@@ -34,7 +34,7 @@ func NewActiveBranchFunc() sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (ab *ActiveBranchFunc) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (ab *ActiveBranchFunc) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	dbName := ctx.GetCurrentDatabase()
 	if dbName == "" {
 		// it is possible to have no current database in some contexts.

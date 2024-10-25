@@ -2399,19 +2399,20 @@ func (t *AlterableDoltTable) getFirstAutoIncrementValue(
 	colIdx := updatedSch.GetAllCols().IndexOf(columnName)
 
 	for {
-		r, err := rowIter.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := rowIter.Next(ctx, r)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return 0, err
 		}
 
-		cmp, err := columnType.Compare(initialValue, r[colIdx])
+		cmp, err := columnType.Compare(initialValue, r.SqlValue(colIdx))
 		if err != nil {
 			return 0, err
 		}
 		if cmp < 0 {
-			initialValue = r[colIdx]
+			initialValue = r.SqlValue(colIdx)
 		}
 	}
 

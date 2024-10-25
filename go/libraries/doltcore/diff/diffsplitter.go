@@ -143,12 +143,12 @@ func mapToAndFromColumns(query sql.Schema) (mapping []int, err error) {
 	return
 }
 
-func (ds DiffSplitter) SplitDiffResultRow(row sql.Row) (from, to RowDiff, err error) {
+func (ds DiffSplitter) SplitDiffResultRow(row sql.LazyRow) (from, to RowDiff, err error) {
 	from = RowDiff{ColDiffs: make([]ChangeType, len(ds.targetSch))}
 	to = RowDiff{ColDiffs: make([]ChangeType, len(ds.targetSch))}
 
-	diffType := row[len(row)-1]
-	row = row[:len(row)-1]
+	diffType := row.SqlValue(row.Count() - 1)
+	row = row.SelectRange(0, row.Count()-1)
 
 	switch diffType.(string) {
 	case removedStr:
@@ -160,20 +160,20 @@ func (ds DiffSplitter) SplitDiffResultRow(row sql.Row) (from, to RowDiff, err er
 			if j < 0 {
 				continue
 			}
-			from.Row[j] = row[i]
+			from.Row[j] = row.SqlValue(i)
 			from.ColDiffs[j] = Removed
 		}
 
 	case addedStr:
 		to.Row = make(sql.Row, len(ds.targetSch))
 		to.RowDiff = Added
-		for i := ds.splitIdx; i < len(row); i++ {
+		for i := ds.splitIdx; i < row.Count(); i++ {
 			j := ds.queryToTarget[i]
 			// skip any columns that aren't mapped
 			if j < 0 {
 				continue
 			}
-			to.Row[j] = row[i]
+			to.Row[j] = row.SqlValue(i)
 			to.ColDiffs[j] = Added
 		}
 
@@ -186,13 +186,13 @@ func (ds DiffSplitter) SplitDiffResultRow(row sql.Row) (from, to RowDiff, err er
 			if j < 0 {
 				continue
 			}
-			from.Row[j] = row[i]
+			from.Row[j] = row.SqlValue(i)
 		}
 		to.Row = make(sql.Row, len(ds.targetSch))
 		to.RowDiff = ModifiedNew
-		for i := ds.splitIdx; i < len(row); i++ {
+		for i := ds.splitIdx; i < row.Count(); i++ {
 			j := ds.queryToTarget[i]
-			to.Row[j] = row[i]
+			to.Row[j] = row.SqlValue(i)
 		}
 		// now do field-wise comparison
 		var cmp int

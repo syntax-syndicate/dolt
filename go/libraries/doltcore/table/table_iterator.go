@@ -28,7 +28,7 @@ import (
 // RowIter wraps a sql.RowIter and abstracts away sql.Context for a
 // context.Context.
 type RowIter interface {
-	Next(ctx context.Context) (sql.Row, error)
+	Next(ctx context.Context, row sql.LazyRow) error
 	Close(ctx context.Context) error
 }
 
@@ -44,12 +44,12 @@ func NewRowIter(inner sql.RowIter) RowIter {
 }
 
 // Next implements RowIter.
-func (i rowIterImpl) Next(ctx context.Context) (sql.Row, error) {
-	r, err := i.inner.Next(&sql.Context{Context: ctx})
+func (i rowIterImpl) Next(ctx context.Context, row sql.LazyRow) error {
+	err := i.inner.Next(&sql.Context{Context: ctx}, row)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return r, nil
+	return nil
 }
 
 // Close implements RowIter.

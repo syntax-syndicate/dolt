@@ -2000,7 +2000,7 @@ func (db Database) addFragToSchemasTable(ctx *sql.Context, fragType, name, defin
 
 	sqlMode := sql.LoadSqlMode(ctx)
 
-	return inserter.Insert(ctx, sql.Row{fragType, name, definition, extraJSON, sqlMode.String()})
+	return inserter.Insert(ctx, sql.NewSqlRowFromRow(sql.Row{fragType, name, definition, extraJSON, sqlMode.String()}))
 }
 
 func (db Database) dropFragFromSchemasTable(ctx *sql.Context, fragType, name string, missingErr error) error {
@@ -2155,12 +2155,14 @@ func (db Database) LoadRebasePlan(ctx *sql.Context) (*rebase.RebasePlan, error) 
 
 	var rebasePlan rebase.RebasePlan
 	for {
-		row, err := iter.Next(ctx)
+		row_ := sql.NewSqlRow(0)
+		err := iter.Next(ctx, row_)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return nil, err
 		}
+		row := row_.SqlValues()
 
 		i, ok := row[1].(uint16)
 		if !ok {
@@ -2210,12 +2212,13 @@ func (db Database) SaveRebasePlan(ctx *sql.Context, plan *rebase.RebasePlan) err
 		if actionEnumValue == -1 {
 			return fmt.Errorf("invalid rebase action: %s", planMember.Action)
 		}
-		err = inserter.Insert(ctx, sql.Row{
+		r := sql.NewSqlRowFromRow(sql.Row{
 			planMember.RebaseOrder,
 			uint16(actionEnumValue),
 			planMember.CommitHash,
 			planMember.CommitMsg,
 		})
+		err = inserter.Insert(ctx, r)
 		if err != nil {
 			return err
 		}

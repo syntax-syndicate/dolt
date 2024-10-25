@@ -47,8 +47,8 @@ func NewStaticErrorRowIter(err error) sql.RowIter {
 	return &StaticErrorRowIter{err}
 }
 
-func (i *StaticErrorRowIter) Next(*sql.Context) (sql.Row, error) {
-	return nil, i.err
+func (i *StaticErrorRowIter) Next(*sql.Context, sql.LazyRow) error {
+	return i.err
 }
 
 func (i *StaticErrorRowIter) Close(*sql.Context) error {
@@ -66,15 +66,15 @@ func NewStaticErrorEditor(err error) *StaticErrorEditor {
 	return &StaticErrorEditor{err}
 }
 
-func (e *StaticErrorEditor) Insert(*sql.Context, sql.Row) error {
+func (e *StaticErrorEditor) Insert(*sql.Context, sql.LazyRow) error {
 	return e.err
 }
 
-func (e *StaticErrorEditor) Delete(*sql.Context, sql.Row) error {
+func (e *StaticErrorEditor) Delete(*sql.Context, sql.LazyRow) error {
 	return e.err
 }
 
-func (e *StaticErrorEditor) Update(*sql.Context, sql.Row, sql.Row) error {
+func (e *StaticErrorEditor) Update(*sql.Context, sql.LazyRow, sql.LazyRow) error {
 	return e.err
 }
 

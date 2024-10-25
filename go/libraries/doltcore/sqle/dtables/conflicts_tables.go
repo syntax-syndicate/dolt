@@ -135,14 +135,14 @@ type conflictRowIter struct {
 
 // Next retrieves the next row. It will return io.EOF if it's the last row.
 // After retrieving the last row, Close will be automatically closed.
-func (itr conflictRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr conflictRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	cnf, err := itr.rd.NextConflict(ctx)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return sqlutil.DoltRowToSqlRow(cnf, itr.rd.GetSchema())
+	return sqlutil.DoltRowToSqlRow(cnf, itr.rd.GetSchema(), row)
 }
 
 // Close the iterator.
@@ -161,7 +161,7 @@ var _ sql.RowDeleter = &conflictDeleter{}
 // Delete deletes the given row. Returns ErrDeleteRowNotFound if the row was not found. Delete will be called once for
 // each row to process for the delete operation, which may involve many rows. After all rows have been processed,
 // Close is called.
-func (cd *conflictDeleter) Delete(ctx *sql.Context, r sql.Row) error {
+func (cd *conflictDeleter) Delete(ctx *sql.Context, r sql.LazyRow) error {
 	cnfSch := cd.ct.rd.GetSchema()
 	// We could use a test VRW, but as any values which use VRWs will already exist, we can potentially save on memory usage
 	cnfRow, err := sqlutil.SqlRowToDoltRow(ctx, cd.ct.tbl.ValueReadWriter(), r, cnfSch)

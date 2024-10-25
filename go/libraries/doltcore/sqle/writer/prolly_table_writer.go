@@ -138,7 +138,7 @@ func getSecondaryKeylessProllyWriters(ctx context.Context, t *doltdb.Table, schS
 }
 
 // Insert implements TableWriter.
-func (w *prollyTableWriter) Insert(ctx *sql.Context, sqlRow sql.Row) (err error) {
+func (w *prollyTableWriter) Insert(ctx *sql.Context, sqlRow sql.LazyRow) (err error) {
 	if err = w.primary.ValidateKeyViolations(ctx, sqlRow); err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (w *prollyTableWriter) Insert(ctx *sql.Context, sqlRow sql.Row) (err error)
 }
 
 // Delete implements TableWriter.
-func (w *prollyTableWriter) Delete(ctx *sql.Context, sqlRow sql.Row) (err error) {
+func (w *prollyTableWriter) Delete(ctx *sql.Context, sqlRow sql.LazyRow) (err error) {
 	for _, wr := range w.secondary {
 		if err := wr.Delete(ctx, sqlRow); err != nil {
 			return err
@@ -182,7 +182,7 @@ func (w *prollyTableWriter) Delete(ctx *sql.Context, sqlRow sql.Row) (err error)
 }
 
 // Update implements TableWriter.
-func (w *prollyTableWriter) Update(ctx *sql.Context, oldRow sql.Row, newRow sql.Row) (err error) {
+func (w *prollyTableWriter) Update(ctx *sql.Context, oldRow sql.LazyRow, newRow sql.LazyRow) (err error) {
 	for _, wr := range w.secondary {
 		if err := wr.Update(ctx, oldRow, newRow); err != nil {
 			if uke, ok := err.(secondaryUniqueKeyError); ok {

@@ -104,11 +104,11 @@ func NewKVToSqlRowConverterForCols(nbf *types.NomsBinFormat, sch schema.Schema, 
 }
 
 // ConvertKVToSqlRow returns a sql.Row generated from the key and value provided.
-func (conv *KVToSqlRowConverter) ConvertKVToSqlRow(k, v types.Value) (sql.Row, error) {
+func (conv *KVToSqlRowConverter) ConvertKVToSqlRow(k, v types.Value, row sql.LazyRow) error {
 	keyTup, ok := k.(types.Tuple)
 
 	if !ok {
-		return nil, errors.New("invalid key is not a tuple")
+		return errors.New("invalid key is not a tuple")
 	}
 
 	var valTup types.Tuple
@@ -116,17 +116,17 @@ func (conv *KVToSqlRowConverter) ConvertKVToSqlRow(k, v types.Value) (sql.Row, e
 		valTup, ok = v.(types.Tuple)
 
 		if !ok {
-			return nil, errors.New("invalid value is not a tuple")
+			return errors.New("invalid value is not a tuple")
 		}
 	} else {
 		valTup = types.EmptyTuple(conv.nbf)
 	}
 
-	return conv.ConvertKVTuplesToSqlRow(keyTup, valTup)
+	return conv.ConvertKVTuplesToSqlRow(keyTup, valTup, row)
 }
 
 // ConvertKVTuplesToSqlRow returns a sql.Row generated from the key and value provided.
-func (conv *KVToSqlRowConverter) ConvertKVTuplesToSqlRow(k, v types.Tuple) (sql.Row, error) {
+func (conv *KVToSqlRowConverter) ConvertKVTuplesToSqlRow(k, v types.Tuple, row sql.LazyRow) error {
 	tupItr := types.TupleItrPool.Get().(*types.TupleIterator)
 	defer types.TupleItrPool.Put(tupItr)
 
@@ -136,7 +136,7 @@ func (conv *KVToSqlRowConverter) ConvertKVTuplesToSqlRow(k, v types.Tuple) (sql.
 		err := conv.processTuple(cols, conv.valsFromKey, 0xFFFFFFFFFFFFFFFF, k, tupItr)
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -144,11 +144,11 @@ func (conv *KVToSqlRowConverter) ConvertKVTuplesToSqlRow(k, v types.Tuple) (sql.
 		err := conv.processTuple(cols, conv.valsFromVal, conv.maxValTag, v, tupItr)
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return cols, nil
+	return nil
 }
 
 func (conv *KVToSqlRowConverter) processTuple(cols []interface{}, valsToFill int, maxTag uint64, tup types.Tuple, tupItr *types.TupleIterator) error {
@@ -239,13 +239,13 @@ func NewDoltMapIter(keyValGet KVGetFunc, closeKVGetter func() error, conv *KVToS
 }
 
 // Next returns the next sql.Row until all rows are returned at which point (nil, io.EOF) is returned.
-func (dmi *DoltMapIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (dmi *DoltMapIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	k, v, err := dmi.kvGet(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return dmi.conv.ConvertKVTuplesToSqlRow(k, v)
+	return dmi.conv.ConvertKVTuplesToSqlRow(k, v, row)
 }
 
 func (dmi *DoltMapIter) Close(*sql.Context) error {

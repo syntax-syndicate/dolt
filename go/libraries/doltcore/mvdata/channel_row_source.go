@@ -60,7 +60,7 @@ func (c *ChannelRowSource) Children() []sql.Node {
 }
 
 // RowIter implements the sql.Node interface.
-func (c *ChannelRowSource) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (c *ChannelRowSource) RowIter(ctx *sql.Context, row sql.LazyRow) (sql.RowIter, error) {
 	return &channelRowIter{
 		rowChannel: c.rowChannel,
 	}, nil
@@ -88,16 +88,17 @@ type channelRowIter struct {
 var _ sql.RowIter = (*channelRowIter)(nil)
 
 // Next implements the sql.RowIter interface.
-func (c *channelRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (c *channelRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for r := range c.rowChannel {
 		select {
 		case <-ctx.Done():
-			return nil, io.EOF
+			return io.EOF
 		default:
-			return r, nil
+			row.CopyRange(0, r)
+			return nil
 		}
 	}
-	return nil, io.EOF
+	return io.EOF
 }
 
 // Close implements the sql.RowIter interface.

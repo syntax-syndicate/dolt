@@ -118,7 +118,7 @@ func (b SecondaryKeyBuilder) SecondaryKeyFromRow(ctx context.Context, k, v val.T
 				return nil, err
 			}
 
-			value, err := expr.Eval(sqlCtx, sqlRow)
+			value, err := expr.Eval(sqlCtx, sql.NewSqlRowFromRow(sqlRow))
 			if err != nil {
 				return nil, err
 			}
@@ -167,7 +167,9 @@ func (b SecondaryKeyBuilder) SecondaryKeyFromRow(ctx context.Context, k, v val.T
 func BuildRow(ctx *sql.Context, key, value val.Tuple, sch schema.Schema, ns tree.NodeStore) (sql.Row, error) {
 	prollyIter := prolly.NewPointLookup(key, value)
 	rowIter := NewProllyRowIterForSchema(sch, prollyIter, sch.GetKeyDescriptor(), sch.GetValueDescriptor(), sch.GetAllCols().Tags, ns)
-	return rowIter.Next(ctx)
+	r := sql.NewSqlRow(sch.GetAllCols().Size())
+	err := rowIter.Next(ctx, r)
+	return r.SqlValues(), err
 }
 
 // canCopyRawBytes returns true if the bytes for |idxField| can

@@ -104,7 +104,7 @@ func newLookupKvIter(
 	}, nil
 }
 
-func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (l *lookupJoinKvIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for {
 		// (1) initialize secondary iter if does not exist yet
 		// (2) read from secondary until EOF
@@ -119,26 +119,26 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 
 			l.srcKey, l.srcVal, err = l.srcIter.Next(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if l.srcKey == nil {
-				return nil, io.EOF
+				return io.EOF
 			}
 
 			l.dstKey, err = l.keyTupleMapper.dstKeyTuple(ctx, l.srcKey, l.srcVal)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			l.dstIter, err = l.dstIterGen.New(ctx, l.dstKey)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 
 		dstKey, dstVal, err := l.dstIter.Next(ctx)
 		if err != nil && err != io.EOF {
-			return nil, err
+			return err
 		}
 
 		if dstKey == nil {
@@ -151,14 +151,14 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 
 		ret, err := l.joiner.buildRow(ctx, l.srcKey, l.srcVal, dstKey, dstVal)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// side-specific filters are currently hoisted
 		if l.srcFilter != nil {
-			res, err := sql.EvaluateCondition(ctx, l.srcFilter, ret[:l.joiner.kvSplits[0]])
+			res, err := sql.EvaluateCondition(ctx, l.srcFilter, ret.SelectRange(0, l.joiner.kvSplits[0]))
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if !sql.IsTrue(res) {
@@ -167,9 +167,9 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 
 		}
 		if l.dstFilter != nil && l.dstKey != nil {
-			res, err := sql.EvaluateCondition(ctx, l.dstFilter, ret[l.joiner.kvSplits[0]:])
+			res, err := sql.EvaluateCondition(ctx, l.dstFilter, ret.SelectRange(l.joiner.kvSplits[0], ret.Count()))
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if !sql.IsTrue(res) {
@@ -179,7 +179,7 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 		if l.joinFilter != nil {
 			res, err := sql.EvaluateCondition(ctx, l.joinFilter, ret)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if res == nil && l.excludeNulls {
 				// override default left join behavior
@@ -190,7 +190,7 @@ func (l *lookupJoinKvIter) Next(ctx *sql.Context) (sql.Row, error) {
 			}
 		}
 		l.returnedARow = true
-		return ret, nil
+		return nil
 	}
 }
 

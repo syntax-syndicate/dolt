@@ -27,7 +27,7 @@ import (
 
 type lookupResult struct {
 	idx uint64
-	r   sql.Row
+	r   sql.LazyRow
 	err error
 }
 
@@ -35,7 +35,7 @@ type lookupResult struct {
 type toLookup struct {
 	idx        uint64
 	t          types.Tuple
-	tupleToRow func(context.Context, types.Tuple) (sql.Row, error)
+	tupleToRow func(context.Context, types.Tuple, sql.LazyRow) error
 	resBuf     *async.RingBuffer
 	epoch      int
 	ctx        context.Context
@@ -92,7 +92,8 @@ func (art *asyncLookups) workerFunc() {
 				break
 			}
 
-			r, err := curr.tupleToRow(curr.ctx, curr.t)
+			r := sql.NewSqlRow(0)
+			err := curr.tupleToRow(curr.ctx, curr.t, r)
 			_ = curr.resBuf.Push(lookupResult{idx: curr.idx, r: r, err: err}, curr.epoch)
 		}
 	}

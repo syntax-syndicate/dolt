@@ -258,7 +258,7 @@ func (ds *DiffSummaryTableFunction) WithExpressions(exprs ...sql.Expression) (sq
 }
 
 // RowIter implements the sql.Node interface
-func (ds *DiffSummaryTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (ds *DiffSummaryTableFunction) RowIter(ctx *sql.Context, _ sql.LazyRow) (sql.RowIter, error) {
 	fromCommitVal, toCommitVal, dotCommitVal, tableName, err := ds.evaluateArguments()
 	if err != nil {
 		return nil, err
@@ -407,18 +407,20 @@ func NewDiffSummaryTableFunctionRowIter(ds []*diff.TableDeltaSummary) sql.RowIte
 	}
 }
 
-func (d *diffSummaryTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (d *diffSummaryTableFunctionRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	defer d.incrementIndexes()
 	if d.diffIdx >= len(d.summaries) {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	if d.summaries == nil {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	ds := d.summaries[d.diffIdx]
-	return getRowFromSummary(ds), nil
+	r := getRowFromSummary(ds)
+	row.CopyRange(0, r)
+	return nil
 }
 
 func (d *diffSummaryTableFunctionRowIter) Close(context *sql.Context) error {

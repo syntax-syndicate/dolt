@@ -155,10 +155,10 @@ type prollyCVIter struct {
 	ns     tree.NodeStore
 }
 
-func (itr prollyCVIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr prollyCVIter) Next(ctx *sql.Context, r sql.LazyRow) error {
 	art, err := itr.itr.Next(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// In addition to the table's columns, the constraint violations table adds
@@ -171,47 +171,52 @@ func (itr prollyCVIter) Next(ctx *sql.Context) (sql.Row, error) {
 		additionalColumns++
 	}
 
-	r := make(sql.Row, itr.sch.GetAllCols().Size()+additionalColumns)
-	r[0] = art.SourceRootish.String()
-	r[1] = merge.MapCVType(art.ArtType)
+	//r := make(sql.Row, itr.sch.GetAllCols().Size()+additionalColumns)
+	r.SetSqlValue(0, art.SourceRootish.String())
+	r.SetSqlValue(1, merge.MapCVType(art.ArtType))
 
 	var meta prolly.ConstraintViolationMeta
 	err = json.Unmarshal(art.Metadata, &meta)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	o := 2
+	var val interface{}
 	if !schema.IsKeyless(itr.sch) {
 		for i := 0; i < itr.kd.Count(); i++ {
-			r[o+i], err = tree.GetField(ctx, itr.kd, i, art.SourceKey, itr.ns)
+			val, err = tree.GetField(ctx, itr.kd, i, art.SourceKey, itr.ns)
 			if err != nil {
-				return nil, err
+				return err
 			}
+			r.SetSqlValue(o+i, val)
 		}
 		o += itr.kd.Count()
 
 		for i := 0; i < itr.vd.Count(); i++ {
-			r[o+i], err = tree.GetField(ctx, itr.vd, i, meta.Value, itr.ns)
+			val, err = tree.GetField(ctx, itr.vd, i, meta.Value, itr.ns)
 			if err != nil {
-				return nil, err
+				return err
 			}
+			r.SetSqlValue(o+i, val)
 		}
 		o += itr.vd.Count()
 	} else {
 		// For a keyless table, we still need a key to uniquely identify the row in the constraint
 		// violation table, so we add in the unique hash for the row.
-		r[o], err = tree.GetField(ctx, itr.kd, 0, art.SourceKey, itr.ns)
+		val, err = tree.GetField(ctx, itr.kd, 0, art.SourceKey, itr.ns)
 		if err != nil {
-			return nil, err
+			return err
 		}
+		r.SetSqlValue(o, val)
 		o += 1
 
 		for i := 0; i < itr.vd.Count()-1; i++ {
-			r[o+i], err = tree.GetField(ctx, itr.vd, i+1, meta.Value, itr.ns)
+			val, err = tree.GetField(ctx, itr.vd, i+1, meta.Value, itr.ns)
 			if err != nil {
-				return nil, err
+				return err
 			}
+			r.SetSqlValue(o+i, val)
 		}
 		o += itr.vd.Count() - 1
 	}
@@ -221,35 +226,35 @@ func (itr prollyCVIter) Next(ctx *sql.Context) (sql.Row, error) {
 		var m merge.FkCVMeta
 		err = json.Unmarshal(meta.VInfo, &m)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		r[o] = m
+		r.SetSqlValue(o, m)
 	case prolly.ArtifactTypeUniqueKeyViol:
 		var m merge.UniqCVMeta
 		err = json.Unmarshal(meta.VInfo, &m)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		r[o] = m
+		r.SetSqlValue(o, m)
 	case prolly.ArtifactTypeNullViol:
 		var m merge.NullViolationMeta
 		err = json.Unmarshal(meta.VInfo, &m)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		r[o] = m
+		r.SetSqlValue(o, m)
 	case prolly.ArtifactTypeChkConsViol:
 		var m merge.CheckCVMeta
 		err = json.Unmarshal(meta.VInfo, &m)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		r[o] = m
+		r.SetSqlValue(o, m)
 	default:
 		panic("json not implemented for artifact type")
 	}
 
-	return r, nil
+	return nil
 }
 
 type prollyCVDeleter struct {
@@ -263,23 +268,23 @@ type prollyCVDeleter struct {
 var _ sql.RowDeleter = (*prollyCVDeleter)(nil)
 
 // Delete implements the interface sql.RowDeleter.
-func (d *prollyCVDeleter) Delete(ctx *sql.Context, r sql.Row) error {
+func (d *prollyCVDeleter) Delete(ctx *sql.Context, r sql.LazyRow) error {
 	// When we delete a row, we need to build the primary key from the row data.
 	// The PK has 3+ fields: from_root_ish, violation_type, plus all PK fields from the source table.
 	// If the source table is keyless and has no PK, then we use the unique row hash provided by keyless tables.
 	for i := 0; i < d.kd.Count()-2; i++ {
-		err := tree.PutField(ctx, d.cvt.artM.NodeStore(), d.kb, i, r[i+2])
+		err := tree.PutField(ctx, d.cvt.artM.NodeStore(), d.kb, i, r.SqlValue(i+2))
 		if err != nil {
 			return err
 		}
 	}
 
 	// then the hash
-	h := hash.Parse(r[0].(string))
+	h := hash.Parse(r.SqlValue(0).(string))
 	d.kb.PutCommitAddr(d.kd.Count()-2, h)
 
 	// Finally the artifact type
-	artType := merge.UnmapCVType(merge.CvType(r[1].(uint64)))
+	artType := merge.UnmapCVType(merge.CvType(r.SqlValue(1).(uint64)))
 	d.kb.PutUint8(d.kd.Count()-1, uint8(artType))
 
 	key := d.kb.Build(d.pool)

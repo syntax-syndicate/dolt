@@ -39,7 +39,7 @@ func NewMergeBase(left, right sql.Expression) sql.Expression {
 }
 
 // Eval implements the sql.Expression interface.
-func (d MergeBase) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (d MergeBase) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	leftSpec, err := d.Left().Eval(ctx, row)
 	if err != nil {
 		return nil, err

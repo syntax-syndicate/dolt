@@ -46,14 +46,14 @@ func GetCreateTableStmt(ctx *sql.Context, engine *sqle.Engine, tableName string)
 	if err != nil {
 		return "", err
 	}
-	rows, err := sql.RowIterToRows(ctx, rowIter)
+	rows, err := sql.RowIterToRows(ctx, rowIter, 2)
 	if err != nil {
 		return "", err
 	}
-	if len(rows) != 1 || len(rows[0]) != 2 {
+	if len(rows) != 1 || rows[0].Count() != 2 {
 		return "", fmt.Errorf("unexpected result from SHOW CREATE TABLE")
 	}
-	stmt, ok := rows[0][1].(string)
+	stmt, ok := rows[0].SqlValue(1).(string)
 	if !ok {
 		return "", fmt.Errorf("expected string statement from SHOW CREATE TABLE")
 	}

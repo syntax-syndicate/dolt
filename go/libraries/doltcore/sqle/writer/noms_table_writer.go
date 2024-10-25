@@ -68,22 +68,23 @@ var _ dsess.TableWriter = &nomsTableWriter{}
 var _ AutoIncrementGetter = &nomsTableWriter{}
 
 func (te *nomsTableWriter) duplicateKeyErrFunc(keyString, indexName string, k, v types.Tuple, isPk bool) error {
-	oldRow, err := te.kvToSQLRow.ConvertKVTuplesToSqlRow(k, v)
+	oldRow := sql.NewSqlRow(0)
+	err := te.kvToSQLRow.ConvertKVTuplesToSqlRow(k, v, oldRow)
 	if err != nil {
 		return err
 	}
 
-	return sql.NewUniqueKeyErr(keyString, isPk, oldRow)
+	return sql.NewUniqueKeyErr(keyString, isPk, oldRow.SqlValues())
 }
 
-func (te *nomsTableWriter) Insert(ctx *sql.Context, sqlRow sql.Row) error {
+func (te *nomsTableWriter) Insert(ctx *sql.Context, sqlRow sql.LazyRow) error {
 	if schema.IsKeyless(te.sch) {
 		return te.keylessInsert(ctx, sqlRow)
 	}
 	return te.keyedInsert(ctx, sqlRow)
 }
 
-func (te *nomsTableWriter) keylessInsert(ctx *sql.Context, sqlRow sql.Row) error {
+func (te *nomsTableWriter) keylessInsert(ctx *sql.Context, sqlRow sql.LazyRow) error {
 	dRow, err := sqlutil.SqlRowToDoltRow(ctx, te.vrw, sqlRow, te.sch)
 	if err != nil {
 		return err
@@ -91,7 +92,7 @@ func (te *nomsTableWriter) keylessInsert(ctx *sql.Context, sqlRow sql.Row) error
 	return te.tableEditor.InsertRow(ctx, dRow, te.duplicateKeyErrFunc)
 }
 
-func (te *nomsTableWriter) keyedInsert(ctx *sql.Context, sqlRow sql.Row) error {
+func (te *nomsTableWriter) keyedInsert(ctx *sql.Context, sqlRow sql.LazyRow) error {
 	k, v, tagToVal, err := sqlutil.DoltKeyValueAndMappingFromSqlRow(ctx, te.vrw, sqlRow, te.sch)
 	if err != nil {
 		return err
@@ -99,7 +100,7 @@ func (te *nomsTableWriter) keyedInsert(ctx *sql.Context, sqlRow sql.Row) error {
 	return te.tableEditor.InsertKeyVal(ctx, k, v, tagToVal, te.duplicateKeyErrFunc)
 }
 
-func (te *nomsTableWriter) Delete(ctx *sql.Context, sqlRow sql.Row) error {
+func (te *nomsTableWriter) Delete(ctx *sql.Context, sqlRow sql.LazyRow) error {
 	if !schema.IsKeyless(te.sch) {
 		k, tagToVal, err := sqlutil.DoltKeyAndMappingFromSqlRow(ctx, te.vrw, sqlRow, te.sch)
 		if err != nil {
@@ -115,7 +116,7 @@ func (te *nomsTableWriter) Delete(ctx *sql.Context, sqlRow sql.Row) error {
 	}
 }
 
-func (te *nomsTableWriter) Update(ctx *sql.Context, oldRow sql.Row, newRow sql.Row) error {
+func (te *nomsTableWriter) Update(ctx *sql.Context, oldRow, newRow sql.LazyRow) error {
 	dOldRow, err := sqlutil.SqlRowToDoltRow(ctx, te.vrw, oldRow, te.sch)
 	if err != nil {
 		return err

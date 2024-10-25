@@ -242,13 +242,15 @@ type schemaConflictsIter struct {
 	baseCommit  *doltdb.Commit
 }
 
-func (it *schemaConflictsIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (it *schemaConflictsIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	if len(it.conflicts) == 0 {
-		return nil, io.EOF
+		return io.EOF
 	}
 	c := it.conflicts[0] // pop next conflict
 	it.conflicts = it.conflicts[1:]
-	return sql.NewRow(c.table.Name, c.baseSch, c.ourSch, c.theirSch, c.description), nil
+	r := sql.NewRow(c.table.Name, c.baseSch, c.ourSch, c.theirSch, c.description)
+	row.CopyRange(0, r)
+	return nil
 }
 
 func (it *schemaConflictsIter) Close(ctx *sql.Context) error {

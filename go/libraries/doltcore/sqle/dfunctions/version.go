@@ -36,7 +36,7 @@ func (*Version) Children() []sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (*Version) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (*Version) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	return VersionString, nil
 }
 

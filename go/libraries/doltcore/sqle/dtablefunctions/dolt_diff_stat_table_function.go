@@ -269,7 +269,7 @@ func (ds *DiffStatTableFunction) WithExpressions(exprs ...sql.Expression) (sql.N
 }
 
 // RowIter implements the sql.Node interface
-func (ds *DiffStatTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (ds *DiffStatTableFunction) RowIter(ctx *sql.Context, _ sql.LazyRow) (sql.RowIter, error) {
 	fromCommitVal, toCommitVal, dotCommitVal, tableName, err := ds.evaluateArguments()
 	if err != nil {
 		return nil, err
@@ -504,18 +504,20 @@ func NewDiffStatTableFunctionRowIter(ds []diffStatNode) sql.RowIter {
 	}
 }
 
-func (d *diffStatTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (d *diffStatTableFunctionRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	defer d.incrementIndexes()
 	if d.diffIdx >= len(d.diffStats) {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	if d.diffStats == nil {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	ds := d.diffStats[d.diffIdx]
-	return getRowFromDiffStat(ds.tblName, ds.diffStat, ds.newColLen, ds.oldColLen, ds.keyless), nil
+	r := getRowFromDiffStat(ds.tblName, ds.diffStat, ds.newColLen, ds.oldColLen, ds.keyless)
+	row.CopyRange(0, r)
+	return nil
 }
 
 func (d *diffStatTableFunctionRowIter) Close(context *sql.Context) error {

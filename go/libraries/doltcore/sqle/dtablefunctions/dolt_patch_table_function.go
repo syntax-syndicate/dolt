@@ -429,7 +429,7 @@ func (p *PatchTableFunction) Name() string {
 }
 
 // RowIter implements the sql.ExecSourceRel interface
-func (p *PatchTableFunction) RowIter(ctx *sql.Context, row sql.Row) (sql.RowIter, error) {
+func (p *PatchTableFunction) RowIter(ctx *sql.Context, row sql.LazyRow) (sql.RowIter, error) {
 	partitions, err := p.Partitions(ctx)
 	if err != nil {
 		return nil, err
@@ -579,14 +579,15 @@ func getDataSqlPatchResults(ctx *sql.Context, diffQuerySch, targetSch sql.Schema
 
 	var res []string
 	for {
-		r, err := iter.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := iter.Next(ctx, r)
 		if err == io.EOF {
 			return res, nil
 		} else if err != nil {
 			return nil, err
 		}
 
-		r, err = rowexec.ProjectRow(ctx, projections, r)
+		err = rowexec.ProjectRow(ctx, projections, r, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -719,10 +720,10 @@ func newPatchTableFunctionRowIter(patchNodes []*patchNode, fromRef, toRef string
 	}
 }
 
-func (itr *patchTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (itr *patchTableFunctionRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for {
 		if itr.patchIdx >= len(itr.patches) {
-			return nil, io.EOF
+			return io.EOF
 		}
 		if itr.currentPatch == nil {
 			itr.currentPatch = itr.patches[itr.patchIdx]
@@ -732,14 +733,15 @@ func (itr *patchTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 			itr.currentRowIter = &ri
 		}
 
-		row, err := (*itr.currentRowIter).Next(ctx)
+		row := sql.NewSqlRow(0)
+		err := (*itr.currentRowIter).Next(ctx, row)
 		if err == io.EOF {
 			itr.currentPatch = nil
 			itr.currentRowIter = nil
 			itr.patchIdx++
 			continue
 		} else if err != nil {
-			return nil, err
+			return err
 		} else {
 			itr.statementIdx++
 			r := sql.Row{
@@ -748,7 +750,8 @@ func (itr *patchTableFunctionRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 				itr.toRef,                         // to_commit_hash
 				itr.currentPatch.tblName.String(), // table_name
 			}
-			return r.Append(row), nil
+			row.SetSqlValue(0, r)
+			return nil
 		}
 	}
 }
@@ -778,17 +781,17 @@ func newPatchStatementsRowIter(ddlStmts, dataStmts []string) sql.RowIter {
 	}
 }
 
-func (p *patchStatementsRowIter) Next(ctx *sql.Context) (sql.Row, error) {
+func (p *patchStatementsRowIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	defer func() {
 		p.idx++
 	}()
 
 	if p.idx >= len(p.stmts) {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	if p.stmts == nil {
-		return nil, io.EOF
+		return io.EOF
 	}
 
 	stmt := p.stmts[p.idx]
@@ -797,10 +800,12 @@ func (p *patchStatementsRowIter) Next(ctx *sql.Context) (sql.Row, error) {
 		diffType = diffTypeData
 	}
 
-	return sql.Row{
+	r := sql.Row{
 		diffType, // diff_type
 		stmt,     // statement
-	}, nil
+	}
+	row.CopyRange(0, r)
+	return nil
 }
 
 func (p *patchStatementsRowIter) Close(_ *sql.Context) error {

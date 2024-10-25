@@ -77,12 +77,12 @@ func NewIndexLookupRowIterAdapter(ctx *sql.Context, idx DoltIndex, durableState 
 }
 
 // Next returns the next row from the iterator.
-func (i *indexLookupRowIterAdapter) Next(ctx *sql.Context) (sql.Row, error) {
+func (i *indexLookupRowIterAdapter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	for i.count == 0 || i.read < i.count {
 		item, err := i.resultBuf.Pop()
 
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		res := item.(lookupResult)
@@ -94,13 +94,14 @@ func (i *indexLookupRowIterAdapter) Next(ctx *sql.Context) (sql.Row, error) {
 				continue
 			}
 
-			return nil, res.err
+			return res.err
 		}
 
-		return res.r, res.err
+		row.CopyRange(0, res.r)
+		return res.err
 	}
 
-	return nil, io.EOF
+	return io.EOF
 }
 
 func (i *indexLookupRowIterAdapter) Close(*sql.Context) error {
@@ -195,27 +196,27 @@ func (i *indexLookupRowIterAdapter) indexKeyToTableKey(nbf *types.NomsBinFormat,
 }
 
 // processKey is called within queueRows and processes each key, sending the resulting row to the row channel.
-func (i *indexLookupRowIterAdapter) processKey(ctx context.Context, indexKey types.Tuple) (sql.Row, error) {
+func (i *indexLookupRowIterAdapter) processKey(ctx context.Context, indexKey types.Tuple, row sql.LazyRow) error {
 	pkTupleVal, err := i.indexKeyToTableKey(i.idx.Format(), indexKey)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	fieldsVal, ok, err := i.tableRows.MaybeGetTuple(ctx, pkTupleVal)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if !ok {
-		return nil, nil
+		return nil
 	}
 
-	sqlRow, err := i.conv.ConvertKVTuplesToSqlRow(pkTupleVal, fieldsVal)
+	err = i.conv.ConvertKVTuplesToSqlRow(pkTupleVal, fieldsVal, row)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return sqlRow, nil
+	return nil
 }
 
 type CoveringIndexRowIterAdapter struct {
@@ -277,14 +278,14 @@ func NewCoveringIndexRowIterAdapter(ctx *sql.Context, idx DoltIndex, keyIter *no
 }
 
 // Next returns the next row from the iterator.
-func (ci *CoveringIndexRowIterAdapter) Next(ctx *sql.Context) (sql.Row, error) {
+func (ci *CoveringIndexRowIterAdapter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	key, value, err := ci.rr.ReadKV(ctx)
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return ci.conv.ConvertKVTuplesToSqlRow(key, value)
+	return ci.conv.ConvertKVTuplesToSqlRow(key, value, row)
 }
 
 func (ci *CoveringIndexRowIterAdapter) Close(*sql.Context) error {

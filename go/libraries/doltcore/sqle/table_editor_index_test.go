@@ -160,7 +160,7 @@ UPDATE onepk SET pk1 = v1 + pk1 ORDER BY pk1 DESC;
 				_ = idx_v1RowData.IterAll(context.Background(), func(key, value types.Value) error {
 					r, err := row.FromNoms(idx_v1.Schema(), key.(types.Tuple), value.(types.Tuple))
 					assert.NoError(t, err)
-					sqlRow, err := sqlutil.DoltRowToSqlRow(r, idx_v1.Schema())
+					err := sqlutil.DoltRowToSqlRow(r, idx_v1.Schema(), nil)
 					assert.NoError(t, err)
 					sqlRows = append(sqlRows, sqlRow)
 					return nil
@@ -172,7 +172,7 @@ UPDATE onepk SET pk1 = v1 + pk1 ORDER BY pk1 DESC;
 				_ = idx_v2v1RowData.IterAll(context.Background(), func(key, value types.Value) error {
 					r, err := row.FromNoms(idx_v2v1.Schema(), key.(types.Tuple), value.(types.Tuple))
 					assert.NoError(t, err)
-					sqlRow, err := sqlutil.DoltRowToSqlRow(r, idx_v2v1.Schema())
+					err := sqlutil.DoltRowToSqlRow(r, idx_v2v1.Schema(), nil)
 					assert.NoError(t, err)
 					sqlRows = append(sqlRows, sqlRow)
 					return nil
@@ -330,7 +330,7 @@ UPDATE oneuni SET v1 = v1 + pk1;
 				_ = idx_v1RowData.IterAll(context.Background(), func(key, value types.Value) error {
 					r, err := row.FromNoms(idx_v1.Schema(), key.(types.Tuple), value.(types.Tuple))
 					assert.NoError(t, err)
-					sqlRow, err := sqlutil.DoltRowToSqlRow(r, idx_v1.Schema())
+					err := sqlutil.DoltRowToSqlRow(r, idx_v1.Schema(), nil)
 					assert.NoError(t, err)
 					sqlRows = append(sqlRows, sqlRow)
 					return nil
@@ -342,7 +342,7 @@ UPDATE oneuni SET v1 = v1 + pk1;
 				_ = idx_v1v2RowData.IterAll(context.Background(), func(key, value types.Value) error {
 					r, err := row.FromNoms(idx_v1v2.Schema(), key.(types.Tuple), value.(types.Tuple))
 					assert.NoError(t, err)
-					sqlRow, err := sqlutil.DoltRowToSqlRow(r, idx_v1v2.Schema())
+					err := sqlutil.DoltRowToSqlRow(r, idx_v1v2.Schema(), nil)
 					assert.NoError(t, err)
 					sqlRows = append(sqlRows, sqlRow)
 					return nil

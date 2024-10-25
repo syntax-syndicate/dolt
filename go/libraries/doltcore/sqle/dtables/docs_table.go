@@ -162,7 +162,7 @@ func newDocsWriter(it *DocsTable) *docsWriter {
 // Insert inserts the row given, returning an error if it cannot. Insert will be called once for each row to process
 // for the insert operation, which may involve many rows. After all rows in an operation have been processed, Close
 // is called.
-func (iw *docsWriter) Insert(ctx *sql.Context, r sql.Row) error {
+func (iw *docsWriter) Insert(ctx *sql.Context, r sql.LazyRow) error {
 	if err := iw.errDuringStatementBegin; err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (iw *docsWriter) Insert(ctx *sql.Context, r sql.Row) error {
 }
 
 // Update the given row. Provides both the old and new rows.
-func (iw *docsWriter) Update(ctx *sql.Context, old sql.Row, new sql.Row) error {
+func (iw *docsWriter) Update(ctx *sql.Context, old sql.LazyRow, new sql.LazyRow) error {
 	if err := iw.errDuringStatementBegin; err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func (iw *docsWriter) Update(ctx *sql.Context, old sql.Row, new sql.Row) error {
 // Delete deletes the given row. Returns ErrDeleteRowNotFound if the row was not found. Delete will be called once for
 // each row to process for the delete operation, which may involve many rows. After all rows have been processed,
 // Close is called.
-func (iw *docsWriter) Delete(ctx *sql.Context, r sql.Row) error {
+func (iw *docsWriter) Delete(ctx *sql.Context, r sql.LazyRow) error {
 	if err := iw.errDuringStatementBegin; err != nil {
 		return err
 	}

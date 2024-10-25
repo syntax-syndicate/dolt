@@ -292,13 +292,16 @@ func migrateOldSchemasTableToNew(ctx *sql.Context, db Database, schemasTable *Wr
 
 	var newRows []sql.Row
 	for {
-		sqlRow, err := iter.Next(ctx)
+		sqlRow_ := sql.NewSqlRow(0)
+		err := iter.Next(ctx, sqlRow_)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
+
+		sqlRow := sqlRow_.SqlValues()
 
 		newRow := make(sql.Row, SchemaTableSchema().GetAllCols().Size())
 		newRow[0] = sqlRow[typeIdx]
@@ -345,7 +348,7 @@ func migrateOldSchemasTableToNew(ctx *sql.Context, db Database, schemasTable *Wr
 
 	inserter := wrapper.backingTable.Inserter(ctx)
 	for _, row := range newRows {
-		err = inserter.Insert(ctx, row)
+		err = inserter.Insert(ctx, sql.NewSqlRowFromRow(row))
 		if err != nil {
 			return nil, err
 		}
@@ -360,7 +363,7 @@ func migrateOldSchemasTableToNew(ctx *sql.Context, db Database, schemasTable *Wr
 }
 
 // fragFromSchemasTable returns the row with the given schema fragment if it exists.
-func fragFromSchemasTable(ctx *sql.Context, tbl *WritableDoltTable, fragType string, name string) (r sql.Row, found bool, rerr error) {
+func fragFromSchemasTable(ctx *sql.Context, tbl *WritableDoltTable, fragType string, name string) (r sql.LazyRow, found bool, rerr error) {
 	fragType, name = strings.ToLower(fragType), strings.ToLower(name)
 
 	// This performs a full table scan in the worst case, but it's only used when adding or dropping a trigger or view
@@ -382,7 +385,7 @@ func fragFromSchemasTable(ctx *sql.Context, tbl *WritableDoltTable, fragType str
 	typeIdx := tbl.sqlSchema().IndexOfColName(doltdb.SchemasTablesTypeCol)
 
 	for {
-		sqlRow, err := iter.Next(ctx)
+		err := iter.Next(ctx, r)
 		if err == io.EOF {
 			break
 		}
@@ -391,8 +394,8 @@ func fragFromSchemasTable(ctx *sql.Context, tbl *WritableDoltTable, fragType str
 		}
 
 		// These columns are case insensitive, make sure to do a case-insensitive comparison
-		if strings.EqualFold(sqlRow[typeIdx].(string), fragType) && strings.EqualFold(sqlRow[nameIdx].(string), name) {
-			return sqlRow, true, nil
+		if strings.EqualFold(r.SqlValue(typeIdx).(string), fragType) && strings.EqualFold(r.SqlValue(nameIdx).(string), name) {
+			return r, true, nil
 		}
 	}
 
@@ -431,13 +434,16 @@ func getSchemaFragmentsOfType(ctx *sql.Context, tbl *WritableDoltTable, fragType
 
 	var frags []schemaFragment
 	for {
-		sqlRow, err := iter.Next(ctx)
+		sqlRow_ := sql.NewSqlRow(0)
+		err := iter.Next(ctx, sqlRow_)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
+
+		sqlRow := sqlRow_.SqlValues()
 
 		if sqlRow[typeIdx] != fragType {
 			continue

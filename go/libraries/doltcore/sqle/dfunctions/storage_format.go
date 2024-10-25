@@ -40,7 +40,7 @@ func (*StorageFormat) Children() []sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (*StorageFormat) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (*StorageFormat) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	sesh := dsess.DSessFromSess(ctx.Session)
 	if sesh.GetCurrentDatabase() == "" {
 		return nil, sql.ErrNoDatabaseSelected.New()

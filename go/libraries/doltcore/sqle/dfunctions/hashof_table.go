@@ -40,7 +40,7 @@ func NewHashOfTable(e sql.Expression) sql.Expression {
 }
 
 // Eval implements the Expression interface.
-func (t *HashOfTable) Eval(ctx *sql.Context, row sql.Row) (interface{}, error) {
+func (t *HashOfTable) Eval(ctx *sql.Context, row sql.LazyRow) (interface{}, error) {
 	val, err := t.Child.Eval(ctx, row)
 
 	if err != nil {
