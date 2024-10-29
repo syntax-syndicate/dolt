@@ -129,7 +129,7 @@ func (cmd RevertCmd) Exec(ctx context.Context, commandStr string, args []string,
 		cli.Printf("Failure to execute '%s': %s\n", query, err.Error())
 		return 1
 	}
-	_, err = sql.RowIterToRows(sqlCtx, rowIter)
+	_, err = sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		cli.Println(err.Error())
 		return 1

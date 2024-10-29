@@ -135,12 +135,13 @@ func (s *sqlEngineTableReader) ReadRow(ctx context.Context) (row.Row, error) {
 }
 
 func (s *sqlEngineTableReader) ReadSqlRow(ctx context.Context) (sql.Row, error) {
-	next, err := s.iter.Next(s.sqlCtx)
+	next := sql.NewSqlRow(0)
+	err := s.iter.Next(s.sqlCtx, next)
 	if err != nil {
 		return nil, err
 	}
 
-	return next, nil
+	return next.SqlValues(), nil
 }
 
 func (s *sqlEngineTableReader) Close(ctx context.Context) error {

@@ -591,12 +591,12 @@ func getCreateTableStatements(ctx *sql.Context, sqlEngine *engine.SqlEngine, dEn
 		if err != nil {
 			return "", err
 		}
-		rows, err := sql.RowIterToRows(ctx, iter)
+		rows, err := sql.RowIterToRows(ctx, iter, 0)
 		if err != nil {
 			return "", err
 		}
 
-		createTable := rows[0][1].(string)
+		createTable := rows[0].SqlValue(1).(string)
 		sb.WriteString(createTable)
 		sb.WriteString("\n\n")
 	}

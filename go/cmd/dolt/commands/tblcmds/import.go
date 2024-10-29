@@ -573,7 +573,7 @@ func move(ctx context.Context, rd table.SqlRowReader, wr *mvdata.SqlEngineTableW
 			if wie, ok := err.(sql.WrappedInsertError); ok {
 				if e, ok := wie.Cause.(*errors.Error); ok {
 					if ue, ok := e.Cause().(sql.UniqueKeyError); ok {
-						rowErr = fmt.Errorf("row %s would be overwritten by %s: %w", sql.FormatRow(ue.Existing), sql.FormatRow(row), err)
+						rowErr = fmt.Errorf("row %s would be overwritten by %s: %w", sql.FormatRow(ue.Existing.SqlValues()), sql.FormatRow(row), err)
 					}
 				}
 			}

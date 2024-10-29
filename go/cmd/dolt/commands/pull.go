@@ -141,7 +141,7 @@ func (cmd PullCmd) Exec(ctx context.Context, commandStr string, args []string, d
 			errChan <- err
 			return
 		}
-		rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+		rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 		if err != nil {
 			errChan <- err
 			return
@@ -178,7 +178,7 @@ func (cmd PullCmd) Exec(ctx context.Context, commandStr string, args []string, d
 				})
 			}
 		} else {
-			fastFwd := getFastforward(row, dprocedures.PullProcFFIndex)
+			fastFwd := getFastforward(row.SqlValues(), dprocedures.PullProcFFIndex)
 
 			var success int
 			if apr.Contains(cli.NoCommitFlag) {

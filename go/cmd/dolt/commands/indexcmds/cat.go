@@ -158,14 +158,15 @@ func (cmd CatCmd) prettyPrintResults(ctx context.Context, doltSch schema.Schema,
 	defer rowItr.Close(sqlCtx)
 
 	for {
-		r, err := rowItr.Next(sqlCtx)
+		r := sql.NewSqlRow(0)
+		err := rowItr.Next(sqlCtx, r)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return err
 		}
-		err = wr.WriteSqlRow(ctx, r)
+		err = wr.WriteSqlRow(ctx, r.SqlValues())
 		if err != nil {
 			return err
 		}

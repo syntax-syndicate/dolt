@@ -131,14 +131,15 @@ func (q QueryDiff) Exec(ctx context.Context, commandStr string, args []string, d
 	defer wr.Close(ctx)
 
 	for {
-		row, rerr := rowIter.Next(sqlCtx)
+		row := sql.NewSqlRow(0)
+		rerr := rowIter.Next(sqlCtx, row)
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
 			return HandleVErrAndExitCode(errhand.VerboseErrorFromError(rerr), usage)
 		}
-		if werr := wr.WriteSqlRow(ctx, row); werr != nil {
+		if werr := wr.WriteSqlRow(ctx, row.SqlValues()); werr != nil {
 			return HandleVErrAndExitCode(errhand.VerboseErrorFromError(werr), usage)
 		}
 	}

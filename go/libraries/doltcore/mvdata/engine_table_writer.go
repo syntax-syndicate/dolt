@@ -195,13 +195,14 @@ func (s *SqlEngineTableWriter) WriteRows(ctx context.Context, inputChannel chan 
 			s.statsCB(s.stats)
 		}
 
-		row, err := iter.Next(s.sqlCtx)
+		row := sql.NewSqlRow(0)
+		err := iter.Next(s.sqlCtx, row)
 		line += 1
 
 		// All other errors are handled by the errorHandler
 		if err == nil {
 			_ = atomic.AddInt32(&s.statOps, 1)
-			updateStats(row)
+			updateStats(row.SqlValues())
 		} else if err == io.EOF {
 			atomic.LoadInt32(&s.statOps)
 			atomic.StoreInt32(&s.statOps, 0)
@@ -286,7 +287,7 @@ func (s *SqlEngineTableWriter) createTable() error {
 	if err != nil {
 		return err
 	}
-	_, err = sql.RowIterToRows(s.sqlCtx, iter)
+	_, err = sql.RowIterToRows(s.sqlCtx, iter, 0)
 	return err
 }
 

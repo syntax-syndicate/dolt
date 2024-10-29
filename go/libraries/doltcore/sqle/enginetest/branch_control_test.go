@@ -1454,7 +1454,7 @@ func TestBranchControlBlocks(t *testing.T) {
 
 			_, iter, _, err := engine.Query(userCtx, test.Query)
 			if err == nil {
-				_, err = sql.RowIterToRows(userCtx, iter)
+				_, err = sql.RowIterToRows(userCtx, iter, 0)
 			}
 			assert.NoError(t, err)
 		})
@@ -1502,7 +1502,7 @@ func TestBranchControlBlocks(t *testing.T) {
 
 			_, iter, _, err := engine.Query(userCtx, test.Query)
 			if err == nil {
-				_, err = sql.RowIterToRows(userCtx, iter)
+				_, err = sql.RowIterToRows(userCtx, iter, 0)
 			}
 			assert.NoError(t, err)
 		})

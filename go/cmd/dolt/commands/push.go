@@ -111,7 +111,7 @@ func (cmd PushCmd) Exec(ctx context.Context, commandStr string, args []string, d
 			return
 		}
 
-		sqlRows, err := sql.RowIterToRows(sqlCtx, rowIter)
+		sqlRows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 		if err != nil {
 			errChan <- err
 			return
@@ -188,9 +188,9 @@ func constructInterpolatedDoltPushQuery(apr *argparser.ArgParseResults) (string,
 
 // printPushResult prints the appropriate message for the given push output.
 // This function is called only when error is nil.
-func printPushResult(rows []sql.Row) {
-	if len(rows[0]) > 1 {
-		cli.Println(rows[0][1].(string))
+func printPushResult(rows []sql.LazyRow) {
+	if rows[0].Count() > 1 {
+		cli.Println(rows[0].SqlValue(1).(string))
 	}
 }
 

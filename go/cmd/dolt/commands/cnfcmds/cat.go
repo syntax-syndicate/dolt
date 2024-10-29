@@ -238,13 +238,14 @@ func printSchemaConflicts(queryist cli.Queryist, sqlCtx *sql.Context, wrCloser i
 	}()
 
 	for {
-		r, err := rowItr.Next(sqlCtx)
+		r := sql.NewSqlRow(0)
+		err := rowItr.Next(sqlCtx, r)
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return err
 		}
-		if err = tw.WriteSqlRow(sqlCtx, r); err != nil {
+		if err = tw.WriteSqlRow(sqlCtx, r.SqlValues()); err != nil {
 			return err
 		}
 	}
@@ -264,14 +265,15 @@ func writeConflictResults(
 	}
 
 	for {
-		r, err := iter.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := iter.Next(ctx, r)
 		if err == io.EOF {
 			return writer.Close(ctx)
 		} else if err != nil {
 			return err
 		}
 
-		conflictRows, err := cs.splitConflictRow(r)
+		conflictRows, err := cs.splitConflictRow(r.SqlValues())
 		if err != nil {
 			return err
 		}

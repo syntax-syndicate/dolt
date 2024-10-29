@@ -107,7 +107,7 @@ func prettyPrintResultsWithSummary(ctx *sql.Context, resultFormat PrintResultFor
 		}
 	}
 
-	numRows, err := writeResultSet(ctx, rowIter, wr)
+	numRows, err := writeResultSet(ctx, rowIter, wr, sqlSch)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func printResultSetSummary(numRows int, start time.Time) error {
 }
 
 // writeResultSet drains the iterator given, printing rows from it to the writer given. Returns the number of rows.
-func writeResultSet(ctx *sql.Context, rowIter sql.RowIter, wr table.SqlRowWriter) (int, error) {
+func writeResultSet(ctx *sql.Context, rowIter sql.RowIter, wr table.SqlRowWriter, sch sql.Schema) (int, error) {
 	i := 0
 	for {
 		r := sql.NewSqlRow(0)
@@ -164,6 +164,8 @@ func writeResultSet(ctx *sql.Context, rowIter sql.RowIter, wr table.SqlRowWriter
 		} else if err != nil {
 			return 0, err
 		}
+
+		r = r.SelectRange(r.Count()-len(sch), r.Count())
 
 		err = wr.WriteSqlRow(ctx, r.SqlValues())
 		if err != nil {
@@ -202,13 +204,13 @@ func printEmptySetResult(start time.Time) {
 }
 
 func printOKResult(ctx *sql.Context, iter sql.RowIter, start time.Time) error {
-	row := sql.NewSqlRow(1)
+	row := sql.NewSqlRow(0)
 	err := iter.Next(ctx, row)
 	if err != nil {
 		return err
 	}
 
-	if okResult, ok := row.SqlValue(0).(types.OkResult); ok {
+	if okResult, ok := row.SqlValue(row.Count() - 1).(types.OkResult); ok {
 		rowNoun := "row"
 		if okResult.RowsAffected != 1 {
 			rowNoun = "rows"

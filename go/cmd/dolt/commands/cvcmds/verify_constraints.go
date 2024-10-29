@@ -201,17 +201,17 @@ type sqlLimitIter struct {
 
 var _ sql.RowIter = &sqlLimitIter{}
 
-func (itr *sqlLimitIter) Next(ctx *sql.Context) (sql.Row, error) {
-	r, err := itr.itr.Next(ctx)
+func (itr *sqlLimitIter) Next(ctx *sql.Context, row sql.LazyRow) error {
+	err := itr.itr.Next(ctx, row)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	itr.count++
 	if itr.count > itr.limit {
 		itr.hitLimit = true
-		return nil, io.EOF
+		return io.EOF
 	}
-	return r, nil
+	return nil
 }
 
 func (itr *sqlLimitIter) Close(ctx *sql.Context) error {

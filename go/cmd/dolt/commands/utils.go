@@ -317,12 +317,17 @@ func GetRowsForSql(queryist cli.Queryist, sqlCtx *sql.Context, query string) ([]
 	if err != nil {
 		return nil, err
 	}
-	rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+	rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	return rows, nil
+	var ret []sql.Row
+	for _, r := range rows {
+		ret = append(ret, r.SqlValues())
+	}
+
+	return ret, nil
 }
 
 // InterpolateAndRunQuery interpolates a query, executes it, and returns the result rows.

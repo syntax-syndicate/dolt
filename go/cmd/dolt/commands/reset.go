@@ -195,10 +195,10 @@ type StatRow struct {
 	status    string
 }
 
-func buildStatRows(rows []sql.Row) []StatRow {
+func buildStatRows(rows []sql.LazyRow) []StatRow {
 	statRows := make([]StatRow, 0, len(rows))
 	for _, row := range rows {
-		statRows = append(statRows, StatRow{row[0].(string), row[1].(string)})
+		statRows = append(statRows, StatRow{row.SqlValue(0).(string), row.SqlValue(1).(string)})
 	}
 	return statRows
 }
@@ -209,7 +209,7 @@ func printNotStaged(sqlCtx *sql.Context, queryist cli.Queryist) {
 	if err != nil {
 		return
 	}
-	rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+	rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		return
 	}

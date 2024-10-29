@@ -153,7 +153,7 @@ func (cmd AddCmd) Exec(ctx context.Context, commandStr string, args []string, _ 
 			return 1
 		}
 
-		_, err = sql.RowIterToRows(sqlCtx, rowIter)
+		_, err = sql.RowIterToRows(sqlCtx, rowIter, 0)
 		if err != nil {
 			cli.PrintErrln(errhand.VerboseErrorFromError(err))
 			return 1
@@ -174,14 +174,14 @@ func patchWorkflow(sqlCtx *sql.Context, queryist cli.Queryist, tables []string) 
 			return 1
 		}
 
-		rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+		rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 		if err != nil {
 			cli.PrintErrln(errhand.VerboseErrorFromError(err))
 			return 1
 		}
 
 		for _, r := range rows {
-			tbl := r[0].(string)
+			tbl := r.SqlValue(0).(string)
 			tables = append(tables, tbl)
 		}
 	}
@@ -289,7 +289,7 @@ func queryForUnstagedChanges(sqlCtx *sql.Context, queryist cli.Queryist, tables 
 		if err != nil {
 			return nil, err
 		}
-		rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+		rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -301,8 +301,8 @@ func queryForUnstagedChanges(sqlCtx *sql.Context, queryist cli.Queryist, tables 
 
 		changeCounts[tableName] = &tablePatchInfo{}
 		for _, row := range rows {
-			diffType := row[0].(string)
-			count, err := coerceToInt(row[1])
+			diffType := row.SqlValue(0).(string)
+			count, err := coerceToInt(row.SqlValue(1))
 			if err != nil {
 				return nil, err
 			}
@@ -337,19 +337,19 @@ func queryForUnstagedChanges(sqlCtx *sql.Context, queryist cli.Queryist, tables 
 		if err != nil {
 			return nil, err
 		}
-		rows, err = sql.RowIterToRows(sqlCtx, rowIter)
+		rows, err = sql.RowIterToRows(sqlCtx, rowIter, 0)
 		if err != nil {
 			return nil, err
 		}
 		if len(rows) != 1 {
 			return nil, errors.New("Expected one row")
 		}
-		firstId, err := coerceToInt(rows[0][0])
+		firstId, err := coerceToInt(rows[0].SqlValue(0))
 		if err != nil {
 			return nil, err
 		}
 		changeCounts[tableName].firstId = firstId
-		lastId, err := coerceToInt(rows[0][1])
+		lastId, err := coerceToInt(rows[0].SqlValue(1))
 		if err != nil {
 			return nil, err
 		}
@@ -375,14 +375,14 @@ func queryForSingleChange(sqlCtx *sql.Context, queryist cli.Queryist, tableName 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+	rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 || len(rows) > 1 {
 		return nil, errors.New("Expected exactly one row")
 	}
-	return rows[0], nil
+	return rows[0].SqlValues(), nil
 }
 
 func opHelp(_ *ishell.Context) {
@@ -424,7 +424,7 @@ func (ps *patchState) stageCurrentChange(c *ishell.Context) {
 	// The Update operation doesn't return any rows, but we need to iterate over it to ensure that the update
 	// is made when the queryist we are using for a local query engine.
 	for {
-		_, err = iter.Next(ps.sqlCtx)
+		err = iter.Next(ps.sqlCtx, sql.NewSqlRow(0))
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -484,7 +484,7 @@ func (ps *patchState) addRemainingInTable(c *ishell.Context) {
 	}
 
 	for {
-		_, err = iter.Next(ps.sqlCtx)
+		err = iter.Next(ps.sqlCtx, sql.NewSqlRow(0))
 		if err == io.EOF {
 			break
 		} else if err != nil {

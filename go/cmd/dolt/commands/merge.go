@@ -144,7 +144,7 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 		cli.Println(err.Error())
 		return 1
 	}
-	rows, err := sql.RowIterToRows(sqlCtx, rowIter)
+	rows, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		cli.Println(err.Error())
 		return 0
@@ -155,7 +155,7 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 	}
 	mergeResultRow := rows[0]
 
-	upToDate, err := everythingUpToDate(mergeResultRow)
+	upToDate, err := everythingUpToDate(mergeResultRow.SqlValues())
 	if err != nil {
 		cli.Println(err.Error())
 		return 1
@@ -186,7 +186,7 @@ func (cmd MergeCmd) Exec(ctx context.Context, commandStr string, args []string, 
 			cli.Println(mergeHashErr.Error())
 		}
 
-		fastFwd := getFastforward(mergeResultRow, dprocedures.MergeProcFFIndex)
+		fastFwd := getFastforward(mergeResultRow.SqlValues(), dprocedures.MergeProcFFIndex)
 
 		if apr.Contains(cli.NoCommitFlag) {
 			return printMergeStats(fastFwd, apr, queryist, sqlCtx, usage, headHash, mergeHash, "HEAD", "STAGED")

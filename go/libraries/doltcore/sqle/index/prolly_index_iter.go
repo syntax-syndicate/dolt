@@ -225,6 +225,7 @@ func (p prollyCoveringIndexIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 		return err
 	}
 
+	row.CopyRange(0, r...)
 	return nil
 }
 

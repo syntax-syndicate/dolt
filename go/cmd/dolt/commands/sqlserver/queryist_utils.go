@@ -136,22 +136,22 @@ func (s *MysqlRowWrapper) Schema() sql.Schema {
 	return s.schema
 }
 
-func (s *MysqlRowWrapper) Next(*sql.Context) (sql.Row, error) {
+func (s *MysqlRowWrapper) Next(_ *sql.Context, row sql.LazyRow) error {
 	if s.finished {
-		return nil, io.EOF
+		return io.EOF
 	}
 	err := s.rows.Scan(s.iRow...)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	sqlRow := make(sql.Row, len(s.vRow))
+	//sqlRow := make(sql.Row, len(s.vRow))
 	for i, val := range s.vRow {
 		if val != nil {
-			sqlRow[i] = *val
+			row.SetSqlValue(i, *val)
 		}
 	}
 	s.finished = !s.rows.Next()
-	return sqlRow, nil
+	return nil
 }
 
 func (s *MysqlRowWrapper) HasMoreRows() bool {

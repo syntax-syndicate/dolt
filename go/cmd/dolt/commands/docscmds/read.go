@@ -170,7 +170,7 @@ func execQuery(sctx *sql.Context, eng *engine.SqlEngine, q string) (err error) {
 	}()
 
 	for {
-		_, err = iter.Next(sctx)
+		err = iter.Next(sctx, sql.NewSqlRow(0))
 		if err == io.EOF {
 			err = nil
 			break

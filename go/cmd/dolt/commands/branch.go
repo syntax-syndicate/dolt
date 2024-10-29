@@ -168,18 +168,19 @@ func getBranches(sqlCtx *sql.Context, queryEngine cli.Queryist, remote bool) ([]
 	var branches []branchMeta
 
 	for {
-		row, err := rowIter.Next(sqlCtx)
+		row := sql.NewSqlRow(2)
+		err := rowIter.Next(sqlCtx, row)
 		if err == io.EOF {
 			return branches, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-		if len(row) != 2 {
+		if row.Count() != 2 {
 			return nil, fmt.Errorf("unexpectedly received multiple columns in '%s': %s", command, row)
 		}
 
-		rowStrings, err := sqlfmt.SqlRowAsStrings(row, schema)
+		rowStrings, err := sqlfmt.SqlRowAsStrings(row.SqlValues(), schema)
 		if err != nil {
 			return nil, err
 		}
@@ -496,7 +497,7 @@ func callStoredProcedure(sqlCtx *sql.Context, queryEngine cli.Queryist, args []s
 		}
 		return HandleVErrAndExitCode(errhand.VerboseErrorFromError(fmt.Errorf("error: %s", err.Error())), nil)
 	}
-	_, err = sql.RowIterToRows(sqlCtx, rowIter)
+	_, err = sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		return HandleVErrAndExitCode(errhand.BuildDError("error: failed to get result rows for query %s", query).AddCause(err).Build(), nil)
 	}

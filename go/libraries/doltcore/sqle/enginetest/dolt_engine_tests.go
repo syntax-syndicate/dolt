@@ -134,7 +134,7 @@ func testAutoIncrementTrackerWithLockMode(t *testing.T, harness DoltEnginetestHa
 	// Confirm that the system variable was correctly set.
 	_, iter, _, err := e.Query(ctx, "select @@innodb_autoinc_lock_mode")
 	require.NoError(t, err)
-	rows, err := sql.RowIterToRows(ctx, iter)
+	rows, err := sql.RowIterToRows(ctx, iter, 0)
 	require.NoError(t, err)
 	assert.Equal(t, rows, []sql.Row{{lockMode}})
 
@@ -172,14 +172,12 @@ func testAutoIncrementTrackerWithLockMode(t *testing.T, harness DoltEnginetestHa
 	var err2 error
 	for err1 != io.EOF || err2 != io.EOF {
 		if err1 != io.EOF {
-			var row1 sql.Row
 			require.NoError(t, err1)
-			row1, err1 = iter1.Next(ctx)
-			_ = row1
+			err1 = iter1.Next(ctx, sql.NewSqlRow(0))
 		}
 		if err2 != io.EOF {
 			require.NoError(t, err2)
-			_, err2 = iter2.Next(ctx)
+			err2 = iter2.Next(ctx, sql.NewSqlRow(0))
 		}
 	}
 	err = iter1.Close(ctx)
@@ -193,7 +191,7 @@ func testAutoIncrementTrackerWithLockMode(t *testing.T, harness DoltEnginetestHa
 	{
 		_, iter, _, err := e.Query(ctx, "select count(*) from timestamps")
 		require.NoError(t, err)
-		rows, err := sql.RowIterToRows(ctx, iter)
+		rows, err := sql.RowIterToRows(ctx, iter, 0)
 		require.NoError(t, err)
 		assert.Equal(t, rows, []sql.Row{{int64(64)}})
 	}
@@ -202,7 +200,7 @@ func testAutoIncrementTrackerWithLockMode(t *testing.T, harness DoltEnginetestHa
 	{
 		_, iter, _, err := e.Query(ctx, "select (select min(pk) from timestamps where t = 1) < (select max(pk) from timestamps where t = 2)")
 		require.NoError(t, err)
-		rows, err := sql.RowIterToRows(ctx, iter)
+		rows, err := sql.RowIterToRows(ctx, iter, 0)
 		require.NoError(t, err)
 		assert.Equal(t, rows, []sql.Row{{true}})
 	}
@@ -210,7 +208,7 @@ func testAutoIncrementTrackerWithLockMode(t *testing.T, harness DoltEnginetestHa
 	{
 		_, iter, _, err := e.Query(ctx, "select (select min(pk) from timestamps where t = 2) < (select max(pk) from timestamps where t = 1)")
 		require.NoError(t, err)
-		rows, err := sql.RowIterToRows(ctx, iter)
+		rows, err := sql.RowIterToRows(ctx, iter, 0)
 		require.NoError(t, err)
 		assert.Equal(t, rows, []sql.Row{{true}})
 	}
@@ -698,10 +696,10 @@ func RunDoltRevisionDbScriptsTest(t *testing.T, h DoltEnginetestHarness) {
 
 	_, iter, _, err := h.Engine().Query(ctx, "select hashof('HEAD~2');")
 	require.NoError(t, err)
-	rows, err := sql.RowIterToRows(ctx, iter)
+	rows, err := sql.RowIterToRows(ctx, iter, 0)
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(rows))
-	commithash := rows[0][0].(string)
+	commithash := rows[0].SqlValue(0).(string)
 
 	scriptTest := queries.ScriptTest{
 		Name: "database revision specs: commit-qualified revision spec",

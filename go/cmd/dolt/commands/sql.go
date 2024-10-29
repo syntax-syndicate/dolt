@@ -942,25 +942,27 @@ func getDBBranchFromSession(sqlCtx *sql.Context, qryist cli.Queryist) (db string
 		return db, branch, false
 	}
 	// Expect single row result, with two columns: db name, branch name.
-	row, err := resp.Next(sqlCtx)
+	row := sql.NewSqlRow(0)
+	err = resp.Next(sqlCtx, row)
 	if err != nil {
 		cli.Println(color.RedString("Failure to get DB Name for session: " + err.Error()))
 		return db, branch, false
 	}
-	if len(row) != 2 {
+	row = row.SelectRange(row.Count()-2, row.Count())
+	if row.Count() != 2 {
 		cli.Println(color.RedString("Runtime error. Invalid column count."))
 		return db, branch, false
 	}
 
-	if row[1] == nil {
+	if row.SqlValue(1) == nil {
 		branch = ""
 	} else {
-		branch = row[1].(string)
+		branch = row.SqlValue(1).(string)
 	}
-	if row[0] == nil {
+	if row.SqlValue(0) == nil {
 		db = ""
 	} else {
-		db = row[0].(string)
+		db = row.SqlValue(0).(string)
 
 		// It is possible to `use mydb/branch`, and as far as your session is concerned your database is mydb/branch. We
 		// allow that, but also want to show the user the branch name in the prompt. So we munge the DB in this case.
@@ -985,17 +987,19 @@ func isDirty(sqlCtx *sql.Context, qryist cli.Queryist) (bool, error) {
 		return false, err
 	}
 	// Expect single row result, with one boolean column.
-	row, err := resp.Next(sqlCtx)
+	row := sql.NewSqlRow(0)
+	err = resp.Next(sqlCtx, row)
 	if err != nil {
 		cli.Println(color.RedString("Failure to get DB Name for session: " + err.Error()))
 		return false, err
 	}
-	if len(row) != 1 {
+	row = row.SelectRange(row.Count()-1, row.Count())
+	if row.Count() != 1 {
 		cli.Println(color.RedString("Runtime error. Invalid column count."))
 		return false, fmt.Errorf("invalid column count")
 	}
 
-	return getStrBoolColAsBool(row[0])
+	return getStrBoolColAsBool(row.SqlValue(0))
 }
 
 // Returns a new auto completer with table names, column names, and SQL keywords.
@@ -1026,17 +1030,20 @@ func newCompleter(
 	identifiers := make(map[string]struct{})
 	var columnNames []string
 	for {
-		r, err := iter.Next(sqlCtx)
+		var r sql.LazyRow = sql.NewSqlRow(0)
+		err := iter.Next(sqlCtx, r)
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return nil, err
 		}
 
-		identifiers[r[0].(string)] = struct{}{}
-		identifiers[r[1].(string)] = struct{}{}
-		identifiers[r[2].(string)] = struct{}{}
-		columnNames = append(columnNames, r[2].(string))
+		r = r.SelectRange(r.Count()-3, r.Count())
+
+		identifiers[r.SqlValue(0).(string)] = struct{}{}
+		identifiers[r.SqlValue(1).(string)] = struct{}{}
+		identifiers[r.SqlValue(2).(string)] = struct{}{}
+		columnNames = append(columnNames, r.SqlValue(2).(string))
 	}
 
 	var completionWords []string
@@ -1136,7 +1143,7 @@ func processParsedQuery(ctx *sql.Context, query string, qryist cli.Queryist, sql
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		_, err = sql.RowIterToRows(ctx, ri)
+		_, err = sql.RowIterToRows(ctx, ri, 0)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1147,7 +1154,7 @@ func processParsedQuery(ctx *sql.Context, query string, qryist cli.Queryist, sql
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		_, err = sql.RowIterToRows(ctx, ri)
+		_, err = sql.RowIterToRows(ctx, ri, 0)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1157,7 +1164,7 @@ func processParsedQuery(ctx *sql.Context, query string, qryist cli.Queryist, sql
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		_, err = sql.RowIterToRows(ctx, ri)
+		_, err = sql.RowIterToRows(ctx, ri, 0)
 		if err != nil {
 			return nil, nil, nil, err
 		}

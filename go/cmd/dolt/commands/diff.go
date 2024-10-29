@@ -1215,7 +1215,8 @@ func diffDoltSchemasTable(
 
 	defer rowIter.Close(sqlCtx)
 	for {
-		row, err := rowIter.Next(sqlCtx)
+		row := sql.NewSqlRow(0)
+		err := rowIter.Next(sqlCtx, row)
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -1223,30 +1224,30 @@ func diffDoltSchemasTable(
 		}
 
 		var fragmentName string
-		if row[0] != nil {
-			fragmentName = row[0].(string)
+		if row.SqlValue(0) != nil {
+			fragmentName = row.SqlValue(0).(string)
 		} else {
-			fragmentName = row[1].(string)
+			fragmentName = row.SqlValue(1).(string)
 		}
 
 		var fragmentType string
-		if row[2] != nil {
-			fragmentType = row[2].(string)
+		if row.SqlValue(2) != nil {
+			fragmentType = row.SqlValue(2).(string)
 		} else {
-			fragmentType = row[3].(string)
+			fragmentType = row.SqlValue(3).(string)
 		}
 
 		var oldFragment string
 		var newFragment string
-		if row[4] != nil {
-			oldFragment = row[4].(string)
+		if row.SqlValue(4) != nil {
+			oldFragment = row.SqlValue(4).(string)
 			// Typically schema fragments have the semicolons stripped, so put it back on
 			if len(oldFragment) > 0 && oldFragment[len(oldFragment)-1] != ';' {
 				oldFragment += ";"
 			}
 		}
-		if row[5] != nil {
-			newFragment = row[5].(string)
+		if row.SqlValue(5) != nil {
+			newFragment = row.SqlValue(5).(string)
 			// Typically schema fragments have the semicolons stripped, so put it back on
 			if len(newFragment) > 0 && newFragment[len(newFragment)-1] != ';' {
 				newFragment += ";"
@@ -1647,7 +1648,8 @@ func writeDiffResults(
 	}
 
 	for {
-		r, err := iter.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := iter.Next(ctx, r)
 		if err == io.EOF {
 			return nil
 		} else if err != nil {
@@ -1713,7 +1715,8 @@ func getModifiedCols(
 ) (map[string]bool, error) {
 	modifiedColNames := make(map[string]bool)
 	for {
-		r, err := iter.Next(ctx)
+		r := sql.NewSqlRow(0)
+		err := iter.Next(ctx, r)
 		if err == io.EOF {
 			break
 		}

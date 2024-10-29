@@ -300,7 +300,7 @@ func processFilterQuery(ctx context.Context, dEnv *env.DoltEnv, root doltdb.Root
 			}
 
 			for {
-				_, err = itr.Next(sqlCtx)
+				err = itr.Next(sqlCtx, sql.NewSqlRow(0))
 				if err == io.EOF {
 					break
 				} else if err != nil {

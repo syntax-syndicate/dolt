@@ -116,7 +116,6 @@ func readDocFromTableAsOf(ctx context.Context, eng *engine.SqlEngine, dbName, do
 	var (
 		sctx *sql.Context
 		iter sql.RowIter
-		row  sql.Row
 	)
 
 	if asOf != "" {
@@ -144,7 +143,8 @@ func readDocFromTableAsOf(ctx context.Context, eng *engine.SqlEngine, dbName, do
 		}
 	}()
 
-	row, err = iter.Next(sctx)
+	row := sql.NewSqlRow(0)
+	err = iter.Next(sctx, row)
 	if err == io.EOF {
 		// doc does not exist
 		return "", nil
@@ -153,9 +153,9 @@ func readDocFromTableAsOf(ctx context.Context, eng *engine.SqlEngine, dbName, do
 		return "", err
 	}
 
-	doc = row[0].(string)
+	doc = row.SqlValue(0).(string)
 
-	_, eof := iter.Next(sctx)
+	eof := iter.Next(sctx, sql.NewSqlRow(0))
 	if eof != io.EOF && eof != nil {
 		return "", eof
 	}

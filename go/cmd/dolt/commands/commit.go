@@ -137,12 +137,13 @@ func performCommit(ctx context.Context, commandStr string, args []string, cliCtx
 				cli.Println(err.Error())
 				return 1, false
 			}
-			row, err := rowIter.Next(sqlCtx)
+			row := sql.NewSqlRow(0)
+			err = rowIter.Next(sqlCtx, row)
 			if err != nil {
 				cli.Println(err.Error())
 				return 1, false
 			}
-			amendStr = row[0].(string)
+			amendStr = row.SqlValue(0).(string)
 		}
 		msg, err = getCommitMessageFromEditor(sqlCtx, queryist, "", amendStr, false, cliCtx)
 		if err != nil {
@@ -165,7 +166,7 @@ func performCommit(ctx context.Context, commandStr string, args []string, cliCtx
 	if err != nil {
 		return handleCommitErr(sqlCtx, queryist, err, usage), false
 	}
-	resultRow, err := sql.RowIterToRows(sqlCtx, rowIter)
+	resultRow, err := sql.RowIterToRows(sqlCtx, rowIter, 0)
 	if err != nil {
 		cli.Println(err.Error())
 		return 1, false
@@ -315,7 +316,7 @@ func handleCommitErr(sqlCtx *sql.Context, queryist cli.Queryist, err error, usag
 			cli.Println(err)
 			return 1
 		}
-		notStagedRows, err := sql.RowIterToRows(sqlCtx, ri)
+		notStagedRows, err := sql.RowIterToRows(sqlCtx, ri, 0)
 		if err != nil {
 			cli.Println(err)
 			return 1
@@ -390,7 +391,7 @@ func buildInitalCommitMsg(sqlCtx *sql.Context, queryist cli.Queryist, suggestedM
 	if err != nil {
 		return "", err
 	}
-	stagedRows, err := sql.RowIterToRows(sqlCtx, ri)
+	stagedRows, err := sql.RowIterToRows(sqlCtx, ri, 2)
 	if err != nil {
 		return "", err
 	}
@@ -399,7 +400,7 @@ func buildInitalCommitMsg(sqlCtx *sql.Context, queryist cli.Queryist, suggestedM
 	if err != nil {
 		return "", err
 	}
-	notStagedRows, err := sql.RowIterToRows(sqlCtx, ri)
+	notStagedRows, err := sql.RowIterToRows(sqlCtx, ri, 2)
 	if err != nil {
 		return "", err
 	}
@@ -447,7 +448,7 @@ func PrintDiffsNotStaged(
 	sqlCtx *sql.Context,
 	queryist cli.Queryist,
 	wr io.Writer,
-	notStagedRows []sql.Row,
+	notStagedRows []sql.LazyRow,
 	printHelp bool,
 	printIgnored bool,
 	linesPrinted int,
@@ -457,13 +458,13 @@ func PrintDiffsNotStaged(
 	if err != nil {
 		return 0, err
 	}
-	conflictRows, err := sql.RowIterToRows(sqlCtx, ri)
+	conflictRows, err := sql.RowIterToRows(sqlCtx, ri, 0)
 	if err != nil {
 		return 0, err
 	}
 	var conflictTables []string
 	for i, _ := range conflictRows {
-		conflictTables = append(conflictTables, conflictRows[i][0].(string))
+		conflictTables = append(conflictTables, conflictRows[i].SqlValue(0).(string))
 	}
 	inCnfSet := set.NewStrSet(conflictTables)
 
@@ -472,13 +473,13 @@ func PrintDiffsNotStaged(
 	if err != nil {
 		return 0, err
 	}
-	schemaConflictRows, err := sql.RowIterToRows(sqlCtx, ri)
+	schemaConflictRows, err := sql.RowIterToRows(sqlCtx, ri, 0)
 	if err != nil {
 		return 0, err
 	}
 	var schemaConflictTables []string
 	for i, _ := range schemaConflictRows {
-		schemaConflictTables = append(schemaConflictTables, schemaConflictRows[i][0].(string))
+		schemaConflictTables = append(schemaConflictTables, schemaConflictRows[i].SqlValue(0).(string))
 	}
 	inCnfSet.Add(schemaConflictTables...)
 
@@ -487,13 +488,13 @@ func PrintDiffsNotStaged(
 	if err != nil {
 		return 0, err
 	}
-	constraintViolationRows, err := sql.RowIterToRows(sqlCtx, ri)
+	constraintViolationRows, err := sql.RowIterToRows(sqlCtx, ri, 0)
 	if err != nil {
 		return 0, err
 	}
 	var constraintViolationTables []string
 	for i, _ := range constraintViolationRows {
-		constraintViolationTables = append(constraintViolationTables, constraintViolationRows[i][0].(string))
+		constraintViolationTables = append(constraintViolationTables, constraintViolationRows[i].SqlValue(0).(string))
 	}
 	violationSet := set.NewStrSet(constraintViolationTables)
 
@@ -532,9 +533,9 @@ func PrintDiffsNotStaged(
 	added := 0
 	removeModified := 0
 	for _, row := range notStagedRows {
-		if row[1] == "new table" {
+		if row.SqlValue(1) == "new table" {
 			added++
-		} else if row[1] == "renamed" {
+		} else if row.SqlValue(1) == "renamed" {
 			added++
 			removeModified++
 		} else {
@@ -630,30 +631,30 @@ func PrintDiffsNotStaged(
 	return linesPrinted, nil
 }
 
-func getModifiedAndRemovedNotStaged(notStagedRows []sql.Row, inCnfSet, violationSet *set.StrSet) (lines []string) {
+func getModifiedAndRemovedNotStaged(notStagedRows []sql.LazyRow, inCnfSet, violationSet *set.StrSet) (lines []string) {
 	lines = make([]string, 0, len(notStagedRows))
 	for _, row := range notStagedRows {
-		if row[1] == "added" || inCnfSet.Contains(row[0].(string)) || violationSet.Contains(row[0].(string)) {
+		if row.SqlValue(1) == "added" || inCnfSet.Contains(row.SqlValue(0).(string)) || violationSet.Contains(row.SqlValue(0).(string)) {
 			continue
 		}
-		if row[1] == "deleted" {
-			lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.RemovedTable], row[0].(string)))
-		} else if row[1] == "renamed" {
+		if row.SqlValue(1) == "deleted" {
+			lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.RemovedTable], row.SqlValue(0).(string)))
+		} else if row.SqlValue(1) == "renamed" {
 			// per Git, unstaged renames are shown as drop + add
-			names := strings.Split(row[0].(string), " -> ")
+			names := strings.Split(row.SqlValue(0).(string), " -> ")
 			lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.RemovedTable], names[0]))
 		} else {
-			lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.ModifiedTable], row[0].(string)))
+			lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.ModifiedTable], row.SqlValue(0).(string)))
 		}
 	}
 	return lines
 }
 
-func getAddedNotStagedTables(notStagedRows []sql.Row) (tables []doltdb.TableName) {
+func getAddedNotStagedTables(notStagedRows []sql.LazyRow) (tables []doltdb.TableName) {
 	tables = make([]doltdb.TableName, 0, len(notStagedRows))
 	for _, row := range notStagedRows {
-		if row[1] == "added" || row[1] == "renamed" {
-			names := strings.Split(row[0].(string), " -> ")
+		if row.SqlValue(1) == "added" || row.SqlValue(1) == "renamed" {
+			names := strings.Split(row.SqlValue(0).(string), " -> ")
 			// TODO: schema name
 			tables = append(tables, doltdb.TableName{Name: names[0]})
 		}
@@ -703,7 +704,7 @@ var tblDiffTypeToLabel = map[diff.TableDiffType]string{
 	diff.AddedTable:    "new table:",
 }
 
-func printStagedDiffs(wr io.Writer, stagedRows []sql.Row, printHelp bool) int {
+func printStagedDiffs(wr io.Writer, stagedRows []sql.LazyRow, printHelp bool) int {
 	if len(stagedRows) > 0 {
 		iohelp.WriteLine(wr, stagedHeader)
 
@@ -713,17 +714,17 @@ func printStagedDiffs(wr io.Writer, stagedRows []sql.Row, printHelp bool) int {
 
 		lines := make([]string, 0, len(stagedRows))
 		for _, row := range stagedRows {
-			if !doltdb.IsReadOnlySystemTable(row[0].(string)) {
-				switch row[1].(string) {
+			if !doltdb.IsReadOnlySystemTable(row.SqlValue(0).(string)) {
+				switch row.SqlValue(1).(string) {
 				case "new table":
-					lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.AddedTable], row[0].(string)))
+					lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.AddedTable], row.SqlValue(0).(string)))
 				case "deleted":
-					lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.RemovedTable], row[0].(string)))
+					lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.RemovedTable], row.SqlValue(0).(string)))
 				case "renamed":
-					names := strings.Split(row[0].(string), " -> ")
+					names := strings.Split(row.SqlValue(0).(string), " -> ")
 					lines = append(lines, fmt.Sprintf(statusRenameFmt, tblDiffTypeToLabel[diff.RenamedTable], names[0], names[1]))
 				default:
-					lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.ModifiedTable], row[0].(string)))
+					lines = append(lines, fmt.Sprintf(statusFmt, tblDiffTypeToLabel[diff.ModifiedTable], row.SqlValue(0).(string)))
 				}
 			}
 		}
