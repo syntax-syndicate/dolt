@@ -154,7 +154,7 @@ var getWriteableSystemTables = func() []string {
 		GetDocTableName(),
 		DoltQueryCatalogTableName,
 		SchemasTableName,
-		ProceduresTableName,
+		GetProceduresTableName(),
 		IgnoreTableName,
 		RebaseTableName,
 
@@ -393,6 +393,11 @@ const (
 	// StatisticsTableName is the statistics system table name
 	StatisticsTableName = "dolt_statistics"
 )
+
+// GetProceduresTableName returns the name of the dolt stored procedures table.
+var GetProceduresTableName = func() string {
+	return ProceduresTableName
+}
 
 const (
 	// WorkflowsTableName is the dolt CI workflows system table name
