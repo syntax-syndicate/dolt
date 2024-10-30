@@ -17,6 +17,11 @@ EVENTSAPI_protos := \
   dolt/services/eventsapi/v1alpha1/event_constants.proto
 EVENTSAPI_pbgo_pkg_path := dolt/services/eventsapi/v1alpha1
 
+DOLTCI_protos := \
+  dolt/services/doltci/v1alpha1/client_event.proto \
+  dolt/services/doltci/v1alpha1/event_constants.proto
+DOLTCI_pbgo_pkg_path := dolt/services/doltci/v1alpha1
+
 REMOTESAPI_protos := \
   dolt/services/remotesapi/v1alpha1/chunkstore.proto \
   dolt/services/remotesapi/v1alpha1/credentials.proto
@@ -33,7 +38,8 @@ PBGO_pkgs := \
   CLIENTEVENTS \
   REMOTESAPI \
   REPLICATIONAPI \
-  EVENTSAPI
+  EVENTSAPI \
+  DOLTCI
 
 all:
 

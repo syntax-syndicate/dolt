@@ -92,11 +92,13 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
+	// todo: check that dolt ci has be initialized already
+
 	workflow, err := parseWorkflow(absPath)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
-	
+
 	fmt.Fprintf(color.Output, "successfully parsed workflow: %s\n", workflow.Name)
 
 	return 0
