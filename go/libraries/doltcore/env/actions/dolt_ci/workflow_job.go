@@ -18,26 +18,20 @@ import (
 	"time"
 )
 
-type WorkflowName string
+type WorkflowJobId string
 
-type Workflow struct {
-	Name      *WorkflowName `db:"name"`
-	CreatedAt time.Time     `db:"created_at"`
-	UpdatedAt time.Time     `db:"updated_at"`
-	Events    []*WorkflowEvent
-	Jobs      []*WorkflowJob
+type WorkflowJob struct {
+	Id             *WorkflowJobId `db:"id"`
+	Name           string         `db:"name"`
+	WorkflowNameFK *WorkflowName  `db:"workflow_name_fk"`
+	CreatedAt      time.Time      `db:"created_at"`
+	UpdateAt       time.Time      `db:"updated_at"`
+	Steps          []*WorkflowStep
 }
 
-func (w *Workflow) GetEvents() []*WorkflowEvent {
-	if w.Events != nil {
-		return w.Events
+func (w *WorkflowJob) GetSteps() []*WorkflowStep {
+	if w.Steps != nil {
+		return w.Steps
 	}
-	return make([]*WorkflowEvent, 0)
-}
-
-func (w *Workflow) GetJobs() []*WorkflowJob {
-	if w.Jobs != nil {
-		return w.Jobs
-	}
-	return make([]*WorkflowJob, 0)
+	return []*WorkflowStep{}
 }

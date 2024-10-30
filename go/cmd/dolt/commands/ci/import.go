@@ -16,9 +16,10 @@ package ci
 
 import (
 	"context"
-	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci"
 	"os"
 	"path/filepath"
+
+	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci"
 
 	"github.com/dolthub/dolt/go/cmd/dolt/cli"
 	"github.com/dolthub/dolt/go/cmd/dolt/commands"
@@ -97,7 +98,7 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	wm := dolt_ci.NewDoltWorkflowManager()
+	wm := dolt_ci.NewDoltWorkflowReadWriter()
 	workflow, err := wm.GetWorkflow(ctx, workflowConfig.Name)
 	if err != nil {
 		// todo: check if error a is a not found error
@@ -107,7 +108,7 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		// exit on any other error
 	}
 
-	err = workflow.UpdateFromWorkflowConfig(workflowConfig)
+	err = workflow.UpdateFromConfig(ctx, workflowConfig)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}

@@ -15,8 +15,9 @@
 package dolt_ci
 
 import (
-	"gopkg.in/yaml.v3"
 	"io"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Step struct {

@@ -16,25 +16,29 @@ package dolt_ci
 
 import "context"
 
-type WorkflowManager interface {
-	GetWorkflow(ctx context.Context, workflowName string) (*WorkflowConfig, error)
-	StoreWorkflow(ctx context.Context, workflow *WorkflowConfig) error
+type WorkflowWriter interface {
+	StoreWorkflow(ctx context.Context, workflow Workflow) error
 }
 
-type doltWorkflowManager struct{}
-
-var _ WorkflowManager = &doltWorkflowManager{}
-
-func NewDoltWorkflowManager() *doltWorkflowManager {
-	return &doltWorkflowManager{}
+type WorkflowReadWriter interface {
+	WorkflowReader
+	WorkflowWriter
 }
 
-func (d doltWorkflowManager) GetWorkflow(ctx context.Context, workflowName string) (*WorkflowConfig, error) {
+type doltWorkflowReadWriter struct{}
+
+var _ WorkflowReadWriter = &doltWorkflowReadWriter{}
+
+func NewDoltWorkflowReadWriter() *doltWorkflowReadWriter {
+	return &doltWorkflowReadWriter{}
+}
+
+func (d doltWorkflowReadWriter) GetWorkflow(ctx context.Context, workflowName string) (Workflow, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (d doltWorkflowManager) StoreWorkflow(ctx context.Context, workflow *WorkflowConfig) error {
+func (d doltWorkflowReadWriter) StoreWorkflow(ctx context.Context, workflow Workflow) error {
 	//TODO implement me
 	panic("implement me")
 }

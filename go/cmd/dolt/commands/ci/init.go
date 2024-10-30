@@ -17,6 +17,7 @@ package ci
 import (
 	"context"
 	"fmt"
+
 	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci/schema"
 
 	"github.com/dolthub/dolt/go/cmd/dolt/cli"

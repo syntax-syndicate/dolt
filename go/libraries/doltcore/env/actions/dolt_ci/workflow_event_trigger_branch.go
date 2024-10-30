@@ -14,30 +14,10 @@
 
 package dolt_ci
 
-import (
-	"time"
-)
+type WorkflowEventTriggerBranchId string
 
-type WorkflowName string
-
-type Workflow struct {
-	Name      *WorkflowName `db:"name"`
-	CreatedAt time.Time     `db:"created_at"`
-	UpdatedAt time.Time     `db:"updated_at"`
-	Events    []*WorkflowEvent
-	Jobs      []*WorkflowJob
-}
-
-func (w *Workflow) GetEvents() []*WorkflowEvent {
-	if w.Events != nil {
-		return w.Events
-	}
-	return make([]*WorkflowEvent, 0)
-}
-
-func (w *Workflow) GetJobs() []*WorkflowJob {
-	if w.Jobs != nil {
-		return w.Jobs
-	}
-	return make([]*WorkflowJob, 0)
+type WorkflowEventTriggerBranch struct {
+	Id                       *WorkflowEventTriggerBranchId `db:"id"`
+	WorkflowEventTriggerIdFk *WorkflowEventTriggerId       `db:"workflow_event_trigger_id_fk"`
+	Branch                   string                        `db:"branch"`
 }
