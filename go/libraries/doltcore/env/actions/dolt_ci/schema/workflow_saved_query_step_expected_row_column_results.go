@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dolt_ci
+package schema
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ import (
 	stypes "github.com/dolthub/dolt/go/store/types"
 )
 
-func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
+func createWorkflowSavedQueryStepExpectedRowColumnResultsTable(ctx *sql.Context) error {
 	dbName := ctx.GetCurrentDatabase()
 	dSess := dsess.DSessFromSess(ctx.Session)
 	ws, err := dSess.WorkingSet(ctx, dbName)
@@ -39,7 +39,7 @@ func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
 
 	root := ws.WorkingRoot()
 
-	found, err := root.HasTable(ctx, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName})
+	found, err := root.HasTable(ctx, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName})
 	if err != nil {
 		return err
 	}
@@ -49,19 +49,8 @@ func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
 
 	colCollection := schema.NewColCollection(
 		schema.Column{
-			Name:          doltdb.WorkflowSavedQueryStepsIdPkColName,
-			Tag:           schema.WorkflowSavedQueryStepsIdTag,
-			Kind:          stypes.StringKind,
-			IsPartOfPK:    true,
-			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
-			Default:       "",
-			AutoIncrement: false,
-			Comment:       "",
-			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
-		},
-		schema.Column{
-			Name:          doltdb.WorkflowSavedQueryStepsSavedQueryNameColName,
-			Tag:           schema.WorkflowSavedQueryStepsSavedQueryNameTag,
+			Name:          doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName,
+			Tag:           schema.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkTag,
 			Kind:          stypes.StringKind,
 			IsPartOfPK:    false,
 			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
@@ -71,19 +60,41 @@ func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
 			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
 		},
 		schema.Column{
-			Name:          doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName,
-			Tag:           schema.WorkflowSavedQueryStepsWorkflowStepIdFkTag,
-			Kind:          stypes.StringKind,
+			Name:          doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeColName,
+			Tag:           schema.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeTag,
+			Kind:          stypes.IntKind,
 			IsPartOfPK:    false,
-			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
+			TypeInfo:      typeinfo.FromKind(stypes.IntKind),
 			Default:       "",
 			AutoIncrement: false,
 			Comment:       "",
 			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
 		},
 		schema.Column{
-			Name:          doltdb.WorkflowSavedQueryStepsExpectedResultsTypeColName,
-			Tag:           schema.WorkflowSavedQueryStepsExpectedResultsTypeTag,
+			Name:          doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountComparisonTypeColName,
+			Tag:           schema.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountComparisonTypeTag,
+			Kind:          stypes.IntKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.IntKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountColName,
+			Tag:           schema.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountTag,
+			Kind:          stypes.IntKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.IntKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName,
+			Tag:           schema.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountTag,
 			Kind:          stypes.IntKind,
 			IsPartOfPK:    false,
 			TypeInfo:      typeinfo.FromKind(stypes.IntKind),
@@ -100,19 +111,19 @@ func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
 	}
 
 	// underlying table doesn't exist. Record this, then create the table.
-	nrv, err := doltdb.CreateEmptyTable(ctx, root, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName}, sch)
+	nrv, err := doltdb.CreateEmptyTable(ctx, root, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName}, sch)
 	if err != nil {
 		return err
 	}
 
 	sfkc := sql.ForeignKeyConstraint{
-		Name:           fmt.Sprintf("%s_%s", doltdb.WorkflowSavedQueryStepsTableName, doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName),
+		Name:           fmt.Sprintf("%s_%s", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName),
 		Database:       dbName,
-		Table:          doltdb.WorkflowSavedQueryStepsTableName,
-		Columns:        []string{doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName},
+		Table:          doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName,
+		Columns:        []string{doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName},
 		ParentDatabase: dbName,
-		ParentTable:    doltdb.WorkflowStepsTableName,
-		ParentColumns:  []string{doltdb.WorkflowStepsIdPkColName},
+		ParentTable:    doltdb.WorkflowSavedQueryStepsTableName,
+		ParentColumns:  []string{doltdb.WorkflowSavedQueryStepsIdPkColName},
 		OnDelete:       sql.ForeignKeyReferentialAction_Cascade,
 		OnUpdate:       sql.ForeignKeyReferentialAction_DefaultAction,
 		IsResolved:     false,
@@ -146,7 +157,7 @@ func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
 		return err
 	}
 
-	nrv, err = nrv.PutTable(ctx, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName}, tbl)
+	nrv, err = nrv.PutTable(ctx, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName}, tbl)
 	if err != nil {
 		return err
 	}

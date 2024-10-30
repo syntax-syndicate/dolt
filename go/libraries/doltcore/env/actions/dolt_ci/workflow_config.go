@@ -48,14 +48,14 @@ type On struct {
 	WorkflowDispatch WorkflowDispatch `yaml:"workflow_dispatch"`
 }
 
-type Workflow struct {
+type WorkflowConfig struct {
 	Name string `yaml:"name"`
 	On   On     `yaml:"on"`
 	Jobs []Job  `yaml:"jobs"`
 }
 
-func ParseWorkflow(r io.Reader) (workflow *Workflow, err error) {
-	workflow = &Workflow{}
+func ParseWorkflow(r io.Reader) (workflow *WorkflowConfig, err error) {
+	workflow = &WorkflowConfig{}
 
 	decoder := yaml.NewDecoder(r)
 	decoder.KnownFields(true)

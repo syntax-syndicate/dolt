@@ -16,9 +16,7 @@ package ci
 
 import (
 	"context"
-	"fmt"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci"
-	"github.com/fatih/color"
 	"os"
 	"path/filepath"
 
@@ -94,17 +92,35 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 
 	// todo: check that dolt ci has be initialized already
 
-	workflow, err := parseWorkflow(absPath)
+	workflowConfig, err := parseWorkflowConfig(absPath)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	fmt.Fprintf(color.Output, "successfully parsed workflow: %s\n", workflow.Name)
+	wm := dolt_ci.NewDoltWorkflowManager()
+	workflow, err := wm.GetWorkflow(ctx, workflowConfig.Name)
+	if err != nil {
+		// todo: check if error a is a not found error
+		// if not found
+		// ignore error
+
+		// exit on any other error
+	}
+
+	err = workflow.UpdateFromWorkflowConfig(workflowConfig)
+	if err != nil {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+	}
+
+	err = wm.StoreWorkflow(ctx, workflow)
+	if err != nil {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+	}
 
 	return 0
 }
 
-func parseWorkflow(path string) (workflow *dolt_ci.Workflow, err error) {
+func parseWorkflowConfig(path string) (workflow *dolt_ci.WorkflowConfig, err error) {
 	var f *os.File
 	f, err = os.Open(path)
 	if err != nil {

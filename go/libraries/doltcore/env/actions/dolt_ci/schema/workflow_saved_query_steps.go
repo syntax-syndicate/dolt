@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dolt_ci
+package schema
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ import (
 	stypes "github.com/dolthub/dolt/go/store/types"
 )
 
-func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
+func createWorkflowSavedQueryStepsTable(ctx *sql.Context) error {
 	dbName := ctx.GetCurrentDatabase()
 	dSess := dsess.DSessFromSess(ctx.Session)
 	ws, err := dSess.WorkingSet(ctx, dbName)
@@ -39,7 +39,7 @@ func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
 
 	root := ws.WorkingRoot()
 
-	found, err := root.HasTable(ctx, doltdb.TableName{Name: doltdb.WorkflowEventTriggerActivitiesTableName})
+	found, err := root.HasTable(ctx, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName})
 	if err != nil {
 		return err
 	}
@@ -49,8 +49,8 @@ func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
 
 	colCollection := schema.NewColCollection(
 		schema.Column{
-			Name:          doltdb.WorkflowEventTriggerActivitiesIdPkColName,
-			Tag:           schema.WorkflowEventTriggerActivitiesIdTag,
+			Name:          doltdb.WorkflowSavedQueryStepsIdPkColName,
+			Tag:           schema.WorkflowSavedQueryStepsIdTag,
 			Kind:          stypes.StringKind,
 			IsPartOfPK:    true,
 			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
@@ -60,8 +60,8 @@ func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
 			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
 		},
 		schema.Column{
-			Name:          doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName,
-			Tag:           schema.WorkflowEventTriggerActivitiesWorkflowEventTriggerIdFkTag,
+			Name:          doltdb.WorkflowSavedQueryStepsSavedQueryNameColName,
+			Tag:           schema.WorkflowSavedQueryStepsSavedQueryNameTag,
 			Kind:          stypes.StringKind,
 			IsPartOfPK:    false,
 			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
@@ -71,11 +71,22 @@ func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
 			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
 		},
 		schema.Column{
-			Name:          doltdb.WorkflowEventTriggerActivitiesActivityColName,
-			Tag:           schema.WorkflowEventTriggerActivitiesActivityTag,
+			Name:          doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName,
+			Tag:           schema.WorkflowSavedQueryStepsWorkflowStepIdFkTag,
 			Kind:          stypes.StringKind,
 			IsPartOfPK:    false,
 			TypeInfo:      typeinfo.FromKind(stypes.StringKind),
+			Default:       "",
+			AutoIncrement: false,
+			Comment:       "",
+			Constraints:   []schema.ColConstraint{schema.NotNullConstraint{}},
+		},
+		schema.Column{
+			Name:          doltdb.WorkflowSavedQueryStepsExpectedResultsTypeColName,
+			Tag:           schema.WorkflowSavedQueryStepsExpectedResultsTypeTag,
+			Kind:          stypes.IntKind,
+			IsPartOfPK:    false,
+			TypeInfo:      typeinfo.FromKind(stypes.IntKind),
 			Default:       "",
 			AutoIncrement: false,
 			Comment:       "",
@@ -89,19 +100,19 @@ func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
 	}
 
 	// underlying table doesn't exist. Record this, then create the table.
-	nrv, err := doltdb.CreateEmptyTable(ctx, root, doltdb.TableName{Name: doltdb.WorkflowEventTriggerActivitiesTableName}, sch)
+	nrv, err := doltdb.CreateEmptyTable(ctx, root, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName}, sch)
 	if err != nil {
 		return err
 	}
 
 	sfkc := sql.ForeignKeyConstraint{
-		Name:           fmt.Sprintf("%s_%s", doltdb.WorkflowEventTriggerActivitiesTableName, doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName),
+		Name:           fmt.Sprintf("%s_%s", doltdb.WorkflowSavedQueryStepsTableName, doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName),
 		Database:       dbName,
-		Table:          doltdb.WorkflowEventTriggerActivitiesTableName,
-		Columns:        []string{doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName},
+		Table:          doltdb.WorkflowSavedQueryStepsTableName,
+		Columns:        []string{doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName},
 		ParentDatabase: dbName,
-		ParentTable:    doltdb.WorkflowEventTriggersTableName,
-		ParentColumns:  []string{doltdb.WorkflowEventTriggersIdPkColName},
+		ParentTable:    doltdb.WorkflowStepsTableName,
+		ParentColumns:  []string{doltdb.WorkflowStepsIdPkColName},
 		OnDelete:       sql.ForeignKeyReferentialAction_Cascade,
 		OnUpdate:       sql.ForeignKeyReferentialAction_DefaultAction,
 		IsResolved:     false,
@@ -135,7 +146,7 @@ func createWorkflowEventTriggerActivitiesTable(ctx *sql.Context) error {
 		return err
 	}
 
-	nrv, err = nrv.PutTable(ctx, doltdb.TableName{Name: doltdb.WorkflowEventTriggerActivitiesTableName}, tbl)
+	nrv, err = nrv.PutTable(ctx, doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName}, tbl)
 	if err != nil {
 		return err
 	}
