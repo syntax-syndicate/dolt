@@ -22,6 +22,7 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
 	"github.com/dolthub/go-mysql-server/sql"
+	"github.com/dolthub/vitess/go/vt/sqlparser"
 	"strconv"
 	"time"
 
@@ -44,17 +45,21 @@ const (
 	doltCITimeFormat = "2006-01-02 15:04:05"
 )
 
+type QueryCB func(ctx *sql.Context, query string) (sql.Schema, sql.RowIter, *sql.QueryFlags, error)
+
 type WorkflowReader interface {
 	GetWorkflowAtRef(ctx context.Context, refName, cSpecStr string) (Workflow, error)
 	ListWorkflowsAtRef(ctx context.Context, refName, cSpecStr string) ([]Workflow, error)
 }
 
-type doltWorkflowReader struct{}
+type doltWorkflowReader struct {
+	qcb QueryCB
+}
 
 var _ WorkflowReader = &doltWorkflowReader{}
 
-func NewWorkflowReader() *doltWorkflowReader {
-	return &doltWorkflowReader{}
+func NewWorkflowReader(qcb QueryCB) *doltWorkflowReader {
+	return &doltWorkflowReader{qcb: qcb}
 }
 
 func (d *doltWorkflowReader) selectAllFromWorkflowsTableQuery() string {
@@ -412,50 +417,64 @@ func (d *doltWorkflowReader) validateTables(shaTables map[string]struct{}) error
 	return nil
 }
 
-func (d *doltWorkflowReader) readRowValues(ctx *sql.Context, db sqle.Database, cb func(ctx context.Context, cvs ColumnValues, refName, sha string) error, refName, sha, query string) error {
-	if query == "" {
-		return nil
+func (d *doltWorkflowReader) sqlReadQuery(ctx *sql.Context, query string, cb func(ctx context.Context, cvs ColumnValues) error) error {
+	sch, rowIter, _, err := d.qcb(ctx, query)
+	if err != nil {
+		return err
 	}
 
+	rows, err := sql.RowIterToRows(ctx, rowIter)
+	if err != nil {
+		return err
+	}
+
+	size := len(sch)
+	for _, row := range rows {
+
+		cvs := make(ColumnValues, size)
+
+		for i := range size {
+			col := sch[i]
+			val := row[i]
+			cv, err := NewColumnValue(col, val)
+			if err != nil {
+				return err
+			}
+			cvs[i] = cv
+		}
+
+		err = cb(ctx, cvs)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *doltWorkflowReader) readRowValues(ctx *sql.Context, db sqle.Database, cb func(ctx context.Context, cvs ColumnValues) error, query string) error {
 	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Read); err != nil {
 		return err
 	}
 
-	// todo: how do i run a query?
-	//sch, _, rows, timeout, hasMore, err := repoDataUseCase.GetSqlReadQueryResultsAtRef(ctx, db, query, refName, 0)
-	//if err != nil {
-	//	return err
-	//}
+	if query == "" {
+		return nil
+	}
 
-	//if timeout {
-	//	return fmt.Errorf("failed to query dolt_ci table due to timeout")
-	//}
-	//
-	//if hasMore {
-	//	return fmt.Errorf("failed to get all rows from table")
-	//}
-	//
-	//allCols := sch.GetAllCols()
-	//size := allCols.Size()
-	//for _, row := range rows {
-	//
-	//	cvs := make(ColumnValues, size)
-	//
-	//	for i := range size {
-	//		col := allCols.GetByIndex(i)
-	//		val := row[i]
-	//		cv, err := NewColumnValue(ctx, col, val)
-	//		if err != nil {
-	//			return err
-	//		}
-	//		cvs[i] = cv
-	//	}
-	//
-	//	err = cb(ctx, cvs, refName, sha)
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
+	sqlStatement, err := sqlparser.Parse(query)
+	if err == sqlparser.ErrEmpty {
+		return fmt.Errorf("Error parsing empty SQL statement")
+	} else if err != nil {
+		return fmt.Errorf("Error parsing SQL: %v.", err.Error())
+	}
 
+	switch sqlStatement.(type) {
+	case *sqlparser.Select, *sqlparser.OtherRead, *sqlparser.Show, *sqlparser.SetOp, *sqlparser.Explain:
+		return d.sqlReadQuery(ctx, query, cb)
+	case *sqlparser.Insert, *sqlparser.Update, *sqlparser.Delete, *sqlparser.DDL:
+		return fmt.Errorf("Error only read queries supported")
+	default:
+		return fmt.Errorf("Unsupported SQL statement: '%v'.", query)
+	}
 	return nil
 }

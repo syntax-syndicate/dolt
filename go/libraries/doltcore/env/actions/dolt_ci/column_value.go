@@ -15,10 +15,10 @@
 package dolt_ci
 
 import (
-	"context"
 	"fmt"
-	"github.com/dolthub/dolt/go/libraries/doltcore/schema"
+	"github.com/dolthub/dolt/go/libraries/doltcore/schema/typeinfo"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/sqlutil"
+	"github.com/dolthub/go-mysql-server/sql"
 	"github.com/dolthub/vitess/go/sqltypes"
 	"strings"
 	"unicode/utf8"
@@ -33,13 +33,20 @@ const utf8RuneError = string(utf8.RuneError)
 
 type ColumnValues []*ColumnValue
 
-func toUtf8StringValue(ctx context.Context, col schema.Column, val interface{}) (string, error) {
+func toUtf8StringValue(col *sql.Column, val interface{}) (string, error) {
 	if val == nil {
 		return "", nil
-	} else if col.TypeInfo.ToSqlType().Type() == sqltypes.Blob {
+	}
+
+	ti, err := typeinfo.FromSqlType(col.Type)
+	if err != nil {
+		return "", err
+	}
+
+	if ti.ToSqlType().Type() == sqltypes.Blob {
 		return "", fmt.Errorf("binary types not supported in dolt ci configuration")
 	} else {
-		formattedVal, err := sqlutil.SqlColToStr(col.TypeInfo.ToSqlType(), val)
+		formattedVal, err := sqlutil.SqlColToStr(ti.ToSqlType(), val)
 		if err != nil {
 			return "", err
 		}
@@ -52,8 +59,8 @@ func toUtf8StringValue(ctx context.Context, col schema.Column, val interface{}) 
 	}
 }
 
-func NewColumnValue(ctx context.Context, col schema.Column, val interface{}) (*ColumnValue, error) {
-	utf8Value, err := toUtf8StringValue(ctx, col, val)
+func NewColumnValue(col *sql.Column, val interface{}) (*ColumnValue, error) {
+	utf8Value, err := toUtf8StringValue(col, val)
 	if err != nil {
 		return nil, err
 	}
