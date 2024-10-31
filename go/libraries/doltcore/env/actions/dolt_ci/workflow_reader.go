@@ -48,8 +48,8 @@ const (
 type QueryCB func(ctx *sql.Context, query string) (sql.Schema, sql.RowIter, *sql.QueryFlags, error)
 
 type WorkflowReader interface {
-	GetWorkflowAtRef(ctx context.Context, refName, cSpecStr string) (Workflow, error)
-	ListWorkflowsAtRef(ctx context.Context, refName, cSpecStr string) ([]Workflow, error)
+	GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error)
+	//ListWorkflowsAtRef(ctx context.Context, refName, cSpecStr string) ([]Workflow, error)
 }
 
 type doltWorkflowReader struct {
@@ -452,11 +452,7 @@ func (d *doltWorkflowReader) sqlReadQuery(ctx *sql.Context, query string, cb fun
 	return nil
 }
 
-func (d *doltWorkflowReader) readRowValues(ctx *sql.Context, db sqle.Database, cb func(ctx context.Context, cvs ColumnValues) error, query string) error {
-	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Read); err != nil {
-		return err
-	}
-
+func (d *doltWorkflowReader) readRowValues(ctx *sql.Context, cb func(ctx context.Context, cvs ColumnValues) error, query string) error {
 	if query == "" {
 		return nil
 	}
@@ -478,3 +474,482 @@ func (d *doltWorkflowReader) readRowValues(ctx *sql.Context, db sqle.Database, c
 	}
 	return nil
 }
+
+func (d *doltWorkflowReader) getInitialWorkflowSavedQueryExpectedRowColumnResultBySavedQueryStepId(ctx *sql.Context, sqsID WorkflowSavedQueryStepId) (*WorkflowSavedQueryExpectedRowColumnResult, error) {
+	query := d.selectAllFromSavedQueryStepExpectedRowColumnResultsTableBySavedQueryStepIdQuery(string(sqsID))
+	workflowSavedQueryExpectedResults, err := d.retrieveWorkflowSavedQueryExpectedRowColumnResults(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(workflowSavedQueryExpectedResults) < 1 {
+		return nil, nil
+	}
+	if len(workflowSavedQueryExpectedResults) > 1 {
+		return nil, errors.New(fmt.Sprintf("expected no more than one row column result for saved query step: %s", sqsID))
+	}
+	return workflowSavedQueryExpectedResults[0], nil
+}
+
+func (d *doltWorkflowReader) getInitialWorkflowSavedQueryStepsByStepId(ctx *sql.Context, stepID WorkflowStepId) (*WorkflowSavedQueryStep, error) {
+	query := d.selectAllFromSavedQueryStepsTableByWorkflowStepIdQuery(string(stepID))
+	savedQuerySteps, err := d.retrieveWorkflowSavedQuerySteps(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(savedQuerySteps) < 1 {
+		return nil, nil
+	}
+	if len(savedQuerySteps) > 1 {
+		return nil, errors.New(fmt.Sprintf("expected no more than one saved query step for step: %s", stepID))
+	}
+	return savedQuerySteps[0], nil
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowStepsByJobId(ctx *sql.Context, jobID WorkflowJobId) ([]*WorkflowStep, error) {
+	query := d.selectAllFromWorkflowStepsTableByWorkflowJobIdQuery(string(jobID))
+	return d.retrieveWorkflowSteps(ctx, query)
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowJobsByWorkflowName(ctx *sql.Context, workflowName string) ([]*WorkflowJob, error) {
+	query := d.selectAllFromWorkflowJobsTableByWorkflowNameQuery(string(workflowName))
+	return d.retrieveWorkflowJobs(ctx, query)
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowEventTriggerActivitiesByEventTriggerId(ctx *sql.Context, triggerID WorkflowEventTriggerId) ([]*WorkflowEventTriggerActivity, error) {
+	query := d.selectAllFromWorkflowEventTriggerActivitiesTableByEventTriggerIdQuery(string(triggerID))
+	return d.retrieveWorkflowEventTriggerActivities(ctx, query)
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowEventTriggersByEventId(ctx *sql.Context, eventID WorkflowEventId) ([]*WorkflowEventTrigger, error) {
+	query := d.selectAllFromWorkflowEventTriggersTableByWorkflowEventIdQuery(string(eventID))
+	return d.retrieveWorkflowEventTriggers(ctx, query)
+
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowEventsByWorkflowName(ctx *sql.Context, workflowName string) ([]*WorkflowEvent, error) {
+	query := d.selectAllFromWorkflowEventsTableByWorkflowNameQuery(string(workflowName))
+	return d.retrieveWorkflowEvent(ctx, query)
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowEventTriggerBranchesByEventTriggerId(ctx *sql.Context, triggerID WorkflowEventTriggerId) ([]*WorkflowEventTriggerBranch, error) {
+	query := d.selectAllFromWorkflowEventTriggerBranchesTableByEventTriggerIdQuery(string(triggerID))
+	return d.retrieveWorkflowEventTriggerBranches(ctx, query)
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowSavedQueryExpectedRowColumnResults(ctx *sql.Context, query string) ([]*WorkflowSavedQueryExpectedRowColumnResult, error) {
+	workflowSavedQueryExpectedResults := make([]*WorkflowSavedQueryExpectedRowColumnResult, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		er, rerr := d.newWorkflowSavedQueryStepExpectedRowColumnResult(cvs)
+		if rerr != nil {
+			return rerr
+		}
+
+		workflowSavedQueryExpectedResults = append(workflowSavedQueryExpectedResults, er)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowSavedQueryExpectedResults, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowSavedQuerySteps(ctx *sql.Context, query string) ([]*WorkflowSavedQueryStep, error) {
+	workflowSavedQuerySteps := make([]*WorkflowSavedQueryStep, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		sq, rerr := d.newWorkflowSavedQueryStep(cvs)
+		if rerr != nil {
+			return rerr
+		}
+
+		workflowSavedQuerySteps = append(workflowSavedQuerySteps, sq)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowSavedQuerySteps, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowSteps(ctx *sql.Context, query string) ([]*WorkflowStep, error) {
+	workflowSteps := make([]*WorkflowStep, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		s, rerr := d.newWorkflowStep(cvs)
+		if rerr != nil {
+			return rerr
+		}
+
+		workflowSteps = append(workflowSteps, s)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowSteps, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowJobs(ctx *sql.Context, query string) ([]*WorkflowJob, error) {
+	workflowJobs := make([]*WorkflowJob, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		j, rerr := d.newWorkflowJob(cvs)
+		if rerr != nil {
+			return rerr
+		}
+		workflowJobs = append(workflowJobs, j)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowJobs, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowEventTriggerActivities(ctx *sql.Context, query string) ([]*WorkflowEventTriggerActivity, error) {
+	workflowEventTriggerActivities := make([]*WorkflowEventTriggerActivity, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		a, rerr := d.newWorkflowEventTriggerActivity(cvs)
+		if rerr != nil {
+			return rerr
+		}
+		workflowEventTriggerActivities = append(workflowEventTriggerActivities, a)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowEventTriggerActivities, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowEventTriggerBranches(ctx *sql.Context, query string) ([]*WorkflowEventTriggerBranch, error) {
+	workflowEventTriggerBranches := make([]*WorkflowEventTriggerBranch, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		b, rerr := d.newWorkflowEventTriggerBranch(cvs)
+		if rerr != nil {
+			return rerr
+		}
+
+		workflowEventTriggerBranches = append(workflowEventTriggerBranches, b)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowEventTriggerBranches, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowEventTriggers(ctx *sql.Context, query string) ([]*WorkflowEventTrigger, error) {
+	workflowEventTriggers := make([]*WorkflowEventTrigger, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		wet, rerr := d.newWorkflowEventTrigger(cvs)
+		if rerr != nil {
+			return rerr
+		}
+		workflowEventTriggers = append(workflowEventTriggers, wet)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowEventTriggers, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflowEvent(ctx *sql.Context, query string) ([]*WorkflowEvent, error) {
+	workflowEvents := make([]*WorkflowEvent, 0)
+
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		we, rerr := d.newWorkflowEvent(cvs)
+		if rerr != nil {
+			return rerr
+		}
+
+		workflowEvents = append(workflowEvents, we)
+		return nil
+	}
+
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflowEvents, nil
+}
+
+func (d *doltWorkflowReader) retrieveWorkflows(ctx *sql.Context, query string) ([]*Workflow, error) {
+	workflows := make([]*Workflow, 0)
+	cb := func(cbCtx context.Context, cvs ColumnValues) error {
+		wf, rerr := d.newWorkflow(cvs)
+		if rerr != nil {
+			return rerr
+		}
+		workflows = append(workflows, wf)
+		return nil
+	}
+	err := d.readRowValues(ctx, cb, query)
+	if err != nil {
+		return nil, err
+	}
+	return workflows, nil
+}
+
+func (d *doltWorkflowReader) getInitialWorkflow(ctx *sql.Context, workflowName string) (*Workflow, error) {
+	query := d.selectOneFromWorkflowsTableQuery(string(workflowName))
+
+	workflows, err := d.retrieveWorkflows(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(workflows) == 0 {
+		return nil, errors.New("workflow not found")
+	}
+	if len(workflows) > 1 {
+		return nil, errors.New("multiple workflows found")
+	}
+	return workflows[0], nil
+}
+
+func (d *doltWorkflowReader) listInitialWorkflowsAtRefPage(ctx *sql.Context) ([]*Workflow, error) {
+	query := d.selectAllFromWorkflowsTableQuery()
+	return d.retrieveWorkflows(ctx, query)
+}
+
+func (d *doltWorkflowReader) listWorkflowsAtRef(ctx *sql.Context) ([]*Workflow, error) {
+	workflows, err := d.listInitialWorkflowsAtRefPage(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, workflow := range workflows {
+		if workflow.Name == nil {
+			return nil, errors.New("workflow name was nil")
+		}
+		err = d.updateWorkflowEvents(ctx, workflow, string(*workflow.Name))
+		if err != nil {
+			return nil, err
+		}
+
+		err = d.updateWorkflowJobs(ctx, workflow, string(*workflow.Name))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return workflows, nil
+}
+
+func (d *doltWorkflowReader) updateWorkflowEvents(ctx *sql.Context, workflow *Workflow, workflowName string) error {
+	events, err := d.listInitialWorkflowEventsByWorkflowName(ctx, workflowName)
+	if err != nil {
+		return err
+	}
+
+	for _, event := range events {
+		if event.Id == nil {
+			return errors.New("workflow event id was nil")
+		}
+
+		triggers, err := d.listInitialWorkflowEventTriggersByEventId(ctx, *event.Id)
+		if err != nil {
+			return err
+		}
+
+		for _, trigger := range triggers {
+			if trigger.Id == nil {
+				return errors.New("workflow trigger id was nil")
+			}
+
+			triggerBranches, err := d.listInitialWorkflowEventTriggerBranchesByEventTriggerId(ctx, *trigger.Id)
+			if err != nil {
+				return err
+			}
+
+			triggerActivities, err := d.listInitialWorkflowEventTriggerActivitiesByEventTriggerId(ctx, *trigger.Id)
+			if err != nil {
+				return err
+			}
+
+			trigger.Branches = triggerBranches
+			trigger.Activities = triggerActivities
+		}
+
+		event.Triggers = triggers
+	}
+
+	workflow.Events = events
+	return nil
+}
+
+func (d *doltWorkflowReader) updateWorkflowJobs(ctx *sql.Context, workflow *Workflow, workflowName string) error {
+	jobs, err := d.listInitialWorkflowJobsByWorkflowName(ctx, workflowName)
+	if err != nil {
+		return err
+	}
+
+	for _, job := range jobs {
+		if job.Id == nil {
+			return errors.New("workflow job id was nil")
+		}
+
+		steps, err := d.listInitialWorkflowStepsByJobId(ctx, *job.Id)
+		if err != nil {
+			return err
+		}
+
+		for _, step := range steps {
+			if step.Id == nil {
+				return errors.New("workflow step id was nil")
+			}
+
+			savedQueryStep, err := d.getInitialWorkflowSavedQueryStepsByStepId(ctx, *step.Id)
+			if err != nil {
+				return err
+			}
+
+			if savedQueryStep != nil && savedQueryStep.Id != nil {
+				savedQueryExpectedResult, err := d.getInitialWorkflowSavedQueryExpectedRowColumnResultBySavedQueryStepId(ctx, *savedQueryStep.Id)
+				if err != nil {
+					return err
+				}
+
+				savedQueryStep.ExpectedRowColumnResult = savedQueryExpectedResult
+				step.SavedQueryStep = savedQueryStep
+			}
+		}
+
+		job.Steps = steps
+	}
+
+	workflow.Jobs = jobs
+	return nil
+}
+
+func (d *doltWorkflowReader) getWorkflow(ctx *sql.Context, workflowName string) (*Workflow, error) {
+	workflow, err := d.getInitialWorkflow(ctx, workflowName)
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.updateWorkflowEvents(ctx, workflow, workflowName)
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.updateWorkflowJobs(ctx, workflow, workflowName)
+	if err != nil {
+		return nil, err
+	}
+
+	return workflow, nil
+}
+
+//func (d *doltWorkflowReader) listWorkflowsOnBranchRef(ctx context.Context, repoDataUseCase RepositoryDataUseCase, repoID RepositoryID, owner, repo, refName, cSpecStr string) ([]*Workflow, error) {
+//	db, err := repoDataUseCase.GetReadOnlyDoltDatabase(ctx, owner, repo)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	// todo: test with different branches with same commit hash
+//	commit, err := repoDataUseCase.GetDoltCoreCommit(ctx, db, cSpecStr, nil)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	root, err := commit.GetRootValue(ctx)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	commitHash, err := commit.HashOf()
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	tables, err := root.GetTableNames(ctx, doltdb.DefaultSchemaName)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	tableMap := make(map[string]struct{})
+//	for _, table := range tables {
+//		if strings.HasPrefix(table, DoltCIDoltTablePrefix) {
+//			tableMap[table] = struct{}{}
+//		}
+//	}
+//
+//	err = d.validateTables(ctx, tableMap)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	return d.listWorkflowsAtRef(ctx, repoDataUseCase, db, repoID, refName, commitHash.String())
+//}
+
+func (d *doltWorkflowReader) GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error) {
+	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Read); err != nil {
+		return nil, err
+	}
+
+	dbName := ctx.GetCurrentDatabase()
+	dSess := dsess.DSessFromSess(ctx.Session)
+
+	_, exists := dSess.GetDoltDB(ctx, dbName)
+	if !exists {
+		return nil, fmt.Errorf("database not found in database %s", dbName)
+	}
+
+	roots, ok := dSess.GetRoots(ctx, dbName)
+	if !ok {
+		return nil, fmt.Errorf("roots not found in database %s", dbName)
+	}
+
+	root := roots.Working
+
+	tables, err := root.GetTableNames(ctx, doltdb.DefaultSchemaName)
+	if err != nil {
+		return nil, err
+	}
+
+	tableMap := make(map[string]struct{})
+	for _, table := range tables {
+		if doltdb.IsDoltCITable(table) {
+			tableMap[table] = struct{}{}
+		}
+	}
+
+	err = d.validateTables(tableMap)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.getWorkflow(ctx, workflowName)
+}
+
+//func (d *doltWorkflowReader) ListWorkflowsAtRef(ctx context.Context, repoDataUseCase RepositoryDataUseCase, repoID RepositoryID, owner, repo, refName, cSpecStr string) ([]*Workflow, error) {
+//	return d.listWorkflowsOnBranchRef(ctx, repoDataUseCase, repoID, owner, repo, refName, cSpecStr)
+//}
