@@ -14,31 +14,35 @@
 
 package dolt_ci
 
-import "context"
+import (
+	"github.com/dolthub/go-mysql-server/sql"
 
-type WorkflowWriter interface {
-	StoreWorkflow(ctx context.Context, workflow Workflow) error
-}
+	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
+)
 
 type WorkflowReadWriter interface {
 	WorkflowReader
 	WorkflowWriter
 }
 
-type doltWorkflowReadWriter struct{}
+type doltWorkflowReadWriter struct {
+	w WorkflowWriter
+	r WorkflowReader
+}
 
 var _ WorkflowReadWriter = &doltWorkflowReadWriter{}
 
-func NewDoltWorkflowReadWriter() *doltWorkflowReadWriter {
-	return &doltWorkflowReadWriter{}
+func NewDoltWorkflowReadWriter(queryFunc QueryFunc) *doltWorkflowReadWriter {
+	return &doltWorkflowReadWriter{
+		w: NewWorkflowWriter(queryFunc),
+		r: NewWorkflowReader(queryFunc),
+	}
 }
 
-func (d doltWorkflowReadWriter) GetWorkflow(ctx context.Context, workflowName string) (Workflow, error) {
-	//TODO implement me
-	panic("implement me")
+func (d *doltWorkflowReadWriter) GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error) {
+	return d.r.GetWorkflow(ctx, db, workflowName)
 }
 
-func (d doltWorkflowReadWriter) StoreWorkflow(ctx context.Context, workflow Workflow) error {
-	//TODO implement me
-	panic("implement me")
+func (d *doltWorkflowReadWriter) Store(ctx *sql.Context, db sqle.Database, workflow *Workflow) error {
+	return d.w.Store(ctx, db, workflow)
 }

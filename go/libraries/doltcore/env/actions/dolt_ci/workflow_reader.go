@@ -18,15 +18,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
-	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
-	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
-	"github.com/dolthub/go-mysql-server/sql"
-	"github.com/dolthub/vitess/go/vt/sqlparser"
 	"strconv"
 	"time"
 
+	"github.com/dolthub/go-mysql-server/sql"
+	"github.com/dolthub/vitess/go/vt/sqlparser"
+
+	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
+	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
+	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
 )
 
 var expectedDoltCITablesOrdered = []string{
@@ -45,7 +46,10 @@ const (
 	doltCITimeFormat = "2006-01-02 15:04:05"
 )
 
-type QueryCB func(ctx *sql.Context, query string) (sql.Schema, sql.RowIter, *sql.QueryFlags, error)
+var ErrWorkflowNotFound = errors.New("workflow not found")
+var ErrMultipleWorkflowsFound = errors.New("multiple workflows found")
+
+type QueryFunc func(ctx *sql.Context, query string) (sql.Schema, sql.RowIter, *sql.QueryFlags, error)
 
 type WorkflowReader interface {
 	GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error)
@@ -53,13 +57,13 @@ type WorkflowReader interface {
 }
 
 type doltWorkflowReader struct {
-	qcb QueryCB
+	queryFunc QueryFunc
 }
 
 var _ WorkflowReader = &doltWorkflowReader{}
 
-func NewWorkflowReader(qcb QueryCB) *doltWorkflowReader {
-	return &doltWorkflowReader{qcb: qcb}
+func NewWorkflowReader(queryFunc QueryFunc) *doltWorkflowReader {
+	return &doltWorkflowReader{queryFunc: queryFunc}
 }
 
 func (d *doltWorkflowReader) selectAllFromWorkflowsTableQuery() string {
@@ -418,7 +422,7 @@ func (d *doltWorkflowReader) validateTables(shaTables map[string]struct{}) error
 }
 
 func (d *doltWorkflowReader) sqlReadQuery(ctx *sql.Context, query string, cb func(ctx context.Context, cvs ColumnValues) error) error {
-	sch, rowIter, _, err := d.qcb(ctx, query)
+	sch, rowIter, _, err := d.queryFunc(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -726,10 +730,10 @@ func (d *doltWorkflowReader) getInitialWorkflow(ctx *sql.Context, workflowName s
 		return nil, err
 	}
 	if len(workflows) == 0 {
-		return nil, errors.New("workflow not found")
+		return nil, ErrWorkflowNotFound
 	}
 	if len(workflows) > 1 {
-		return nil, errors.New("multiple workflows found")
+		return nil, ErrMultipleWorkflowsFound
 	}
 	return workflows[0], nil
 }

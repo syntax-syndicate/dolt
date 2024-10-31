@@ -16,15 +16,16 @@ package ci
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci"
 
 	"github.com/dolthub/dolt/go/cmd/dolt/cli"
 	"github.com/dolthub/dolt/go/cmd/dolt/commands"
 	"github.com/dolthub/dolt/go/cmd/dolt/errhand"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
+	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci"
+	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci/schema"
 	"github.com/dolthub/dolt/go/libraries/utils/argparser"
 )
 
@@ -91,29 +92,50 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	// todo: check that dolt ci has be initialized already
+	querist, sqlCtx, closeFunc, err := cliCtx.QueryEngine(ctx)
+	if err != nil {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+	}
+	if closeFunc != nil {
+		defer closeFunc()
+	}
+
+	hasTables, err := schema.HasDoltCITables(sqlCtx)
+	if err != nil {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+	}
+
+	if !hasTables {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(fmt.Errorf("dolt ci has not been initialized, please initialize with: dolt ci init")), usage)
+	}
 
 	workflowConfig, err := parseWorkflowConfig(absPath)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	wm := dolt_ci.NewDoltWorkflowReadWriter()
-	workflow, err := wm.GetWorkflow(ctx, workflowConfig.Name)
-	if err != nil {
-		// todo: check if error a is a not found error
-		// if not found
-		// ignore error
+	wRW := dolt_ci.NewDoltWorkflowReadWriter(querist.Query)
 
-		// exit on any other error
-	}
-
-	err = workflow.UpdateFromConfig(ctx, workflowConfig)
+	db, err := newDatabase(sqlCtx, sqlCtx.GetCurrentDatabase(), dEnv, false)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	err = wm.StoreWorkflow(ctx, workflow)
+	workflow, err := wRW.GetWorkflow(sqlCtx, db, workflowConfig.Name)
+	if err != nil {
+		// todo: check if error a is a not found error
+		if err != dolt_ci.ErrWorkflowNotFound {
+			return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+		}
+	}
+
+	// todo: merge workflow and workflow config
+
+	name := dolt_ci.WorkflowName("dustins first workflow")
+
+	workflow = &dolt_ci.Workflow{Name: &name}
+
+	err = wRW.Store(sqlCtx, db, workflow)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
