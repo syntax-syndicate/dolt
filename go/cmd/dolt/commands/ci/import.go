@@ -124,28 +124,14 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	wRW := dolt_ci.NewDoltWorkflowReadWriter(user, email, querist.Query)
+	wr := dolt_ci.NewWorkflowManager(user, email, querist.Query)
 
 	db, err := newDatabase(sqlCtx, sqlCtx.GetCurrentDatabase(), dEnv, false)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	workflow, err := wRW.GetWorkflow(sqlCtx, db, workflowConfig.Name)
-	if err != nil {
-		// todo: check if error a is a not found error
-		if err != dolt_ci.ErrWorkflowNotFound {
-			return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
-		}
-	}
-
-	// todo: merge workflow and workflow config
-
-	name := dolt_ci.WorkflowName("dustins first workflow")
-
-	workflow = &dolt_ci.Workflow{Name: &name}
-
-	err = wRW.StoreAndCommit(sqlCtx, db, workflow)
+	err = wr.StoreFromConfigAndCommit(sqlCtx, db, workflowConfig)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
