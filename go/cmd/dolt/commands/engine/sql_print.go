@@ -54,16 +54,16 @@ const (
 )
 
 // PrettyPrintResults prints the result of a query in the format provided
-func PrettyPrintResults(ctx *sql.Context, resultFormat PrintResultFormat, sqlSch sql.Schema, rowIter sql.RowIter) (rerr error) {
-	return prettyPrintResultsWithSummary(ctx, resultFormat, sqlSch, rowIter, PrintNoSummary)
+func PrettyPrintResults(ctx *sql.Context, resultFormat PrintResultFormat, sqlSch sql.Schema, rowIter sql.RowIter, qFlags *sql.QueryFlags) (rerr error) {
+	return prettyPrintResultsWithSummary(ctx, resultFormat, sqlSch, rowIter, PrintNoSummary, qFlags)
 }
 
 // PrettyPrintResultsExtended prints the result of a query in the format provided, including row count and timing info
-func PrettyPrintResultsExtended(ctx *sql.Context, resultFormat PrintResultFormat, sqlSch sql.Schema, rowIter sql.RowIter) (rerr error) {
-	return prettyPrintResultsWithSummary(ctx, resultFormat, sqlSch, rowIter, PrintRowCountAndTiming)
+func PrettyPrintResultsExtended(ctx *sql.Context, resultFormat PrintResultFormat, sqlSch sql.Schema, rowIter sql.RowIter, qFlags *sql.QueryFlags) (rerr error) {
+	return prettyPrintResultsWithSummary(ctx, resultFormat, sqlSch, rowIter, PrintRowCountAndTiming, qFlags)
 }
 
-func prettyPrintResultsWithSummary(ctx *sql.Context, resultFormat PrintResultFormat, sqlSch sql.Schema, rowIter sql.RowIter, summary PrintSummaryBehavior) (rerr error) {
+func prettyPrintResultsWithSummary(ctx *sql.Context, resultFormat PrintResultFormat, sqlSch sql.Schema, rowIter sql.RowIter, summary PrintSummaryBehavior, qFlags *sql.QueryFlags) (rerr error) {
 	defer func() {
 		closeErr := rowIter.Close(ctx)
 		if rerr == nil && closeErr != nil {
@@ -75,7 +75,7 @@ func prettyPrintResultsWithSummary(ctx *sql.Context, resultFormat PrintResultFor
 
 	// TODO: this isn't appropriate for JSON, CSV, other structured result formats
 	if isOkResult(sqlSch) {
-		return printOKResult(ctx, rowIter, start)
+		return printOKResult(ctx, rowIter, start, qFlags)
 	}
 
 	var wr table.SqlRowWriter
@@ -107,7 +107,7 @@ func prettyPrintResultsWithSummary(ctx *sql.Context, resultFormat PrintResultFor
 		}
 	}
 
-	numRows, err := writeResultSet(ctx, rowIter, wr, sqlSch)
+	numRows, err := writeResultSet(ctx, rowIter, wr, sqlSch, qFlags)
 	if err != nil {
 		return err
 	}
@@ -154,10 +154,10 @@ func printResultSetSummary(numRows int, start time.Time) error {
 }
 
 // writeResultSet drains the iterator given, printing rows from it to the writer given. Returns the number of rows.
-func writeResultSet(ctx *sql.Context, rowIter sql.RowIter, wr table.SqlRowWriter, sch sql.Schema) (int, error) {
+func writeResultSet(ctx *sql.Context, rowIter sql.RowIter, wr table.SqlRowWriter, sch sql.Schema, qFlags *sql.QueryFlags) (int, error) {
 	i := 0
 	for {
-		r := sql.NewSqlRow(0)
+		r := sql.NewSqlRow(qFlags.MaxExprCnt)
 		err := rowIter.Next(ctx, r)
 		if err == io.EOF {
 			break
@@ -203,8 +203,8 @@ func printEmptySetResult(start time.Time) {
 	cli.Printf("Empty set (%.2f sec)\n", seconds)
 }
 
-func printOKResult(ctx *sql.Context, iter sql.RowIter, start time.Time) error {
-	row := sql.NewSqlRow(0)
+func printOKResult(ctx *sql.Context, iter sql.RowIter, start time.Time, qFlags *sql.QueryFlags) error {
+	row := sql.NewSqlRow(qFlags.MaxExprCnt)
 	err := iter.Next(ctx, row)
 	if err != nil {
 		return err

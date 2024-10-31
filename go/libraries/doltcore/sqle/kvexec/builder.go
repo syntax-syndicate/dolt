@@ -36,7 +36,7 @@ type Builder struct{}
 
 var _ sql.NodeExecBuilder = (*Builder)(nil)
 
-func (b Builder) Build(ctx *sql.Context, n sql.Node, r sql.LazyRow) (sql.RowIter, error) {
+func (b Builder) Build(ctx *sql.Context, n sql.Node, r sql.LazyRow, qFlags *sql.QueryFlags) (sql.RowIter, error) {
 	switch n := n.(type) {
 	case *plan.JoinNode:
 		if n.Op.IsLookup() && !n.Op.IsPartial() {

@@ -113,8 +113,9 @@ func (cmd BlameCmd) Exec(ctx context.Context, commandStr string, args []string, 
 
 	var schema sql.Schema
 	var ri sql.RowIter
+	var qFlags *sql.QueryFlags
 	if apr.NArg() == 1 {
-		schema, ri, _, err = queryist.Query(sqlCtx, fmt.Sprintf(blameQueryTemplate, apr.Arg(0), "HEAD"))
+		schema, ri, qFlags, err = queryist.Query(sqlCtx, fmt.Sprintf(blameQueryTemplate, apr.Arg(0), "HEAD"))
 	} else {
 		// validate input
 		ref := apr.Arg(0)
@@ -123,14 +124,14 @@ func (cmd BlameCmd) Exec(ctx context.Context, commandStr string, args []string, 
 			return 1
 		}
 
-		schema, ri, _, err = queryist.Query(sqlCtx, fmt.Sprintf(blameQueryTemplate, apr.Arg(1), apr.Arg(0)))
+		schema, ri, qFlags, err = queryist.Query(sqlCtx, fmt.Sprintf(blameQueryTemplate, apr.Arg(1), apr.Arg(0)))
 	}
 	if err != nil {
 		iohelp.WriteLine(cli.CliOut, err.Error())
 		return 1
 	}
 
-	err = engine.PrettyPrintResults(sqlCtx, engine.FormatTabular, schema, ri)
+	err = engine.PrettyPrintResults(sqlCtx, engine.FormatTabular, schema, ri, qFlags)
 	if err != nil {
 		iohelp.WriteLine(cli.CliOut, err.Error())
 		return 1

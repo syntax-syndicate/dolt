@@ -912,7 +912,7 @@ func convertVitessJsonExpressionString(ctx *sql.Context, value sqltypes.Value) (
 		return nil, err
 	}
 
-	rowIter, err := rowexec.DefaultBuilder.Build(ctx, analyze, nil)
+	rowIter, err := rowexec.DefaultBuilder.Build(ctx, analyze, nil, nil)
 	if err != nil {
 		return nil, err
 	}

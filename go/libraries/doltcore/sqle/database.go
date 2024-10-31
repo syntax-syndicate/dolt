@@ -2148,7 +2148,7 @@ func (db Database) LoadRebasePlan(ctx *sql.Context) (*rebase.RebasePlan, error) 
 		Column: expression.NewGetField(0, types.MustCreateDecimalType(6, 2), "rebase_order", false),
 		Order:  sql.Ascending,
 	}}, resolvedTable)
-	iter, err := rowexec.DefaultBuilder.Build(ctx, sort, nil)
+	iter, err := rowexec.DefaultBuilder.Build(ctx, sort, nil, nil)
 	if err != nil {
 		return nil, err
 	}

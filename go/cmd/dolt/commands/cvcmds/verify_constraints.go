@@ -172,14 +172,14 @@ func printViolationsForTable(ctx context.Context, dbName, tblName string, tbl *d
 	}
 	sCtx.SetCurrentDatabase(dbName)
 
-	sqlSch, sqlItr, _, err := eng.Query(sCtx, query)
+	sqlSch, sqlItr, qFlags, err := eng.Query(sCtx, query)
 	if err != nil {
 		return errhand.BuildDError("Error querying constraint violations").AddCause(err).Build()
 	}
 
 	limitItr := &sqlLimitIter{itr: sqlItr, limit: 50}
 
-	err = engine.PrettyPrintResults(sCtx, engine.FormatTabular, sqlSch, limitItr)
+	err = engine.PrettyPrintResults(sCtx, engine.FormatTabular, sqlSch, limitItr, qFlags)
 	if err != nil {
 		return errhand.BuildDError("Error outputting rows").AddCause(err).Build()
 	}

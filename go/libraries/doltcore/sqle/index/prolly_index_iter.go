@@ -173,6 +173,7 @@ type prollyCoveringIndexIter struct {
 	keyMap, valMap, ordMap val.OrdinalMapping
 	projections            []uint64
 	sqlSch                 sql.Schema
+	offset                 int
 }
 
 var _ sql.RowIter = prollyCoveringIndexIter{}
@@ -213,6 +214,11 @@ func newProllyCoveringIndexIter(
 	}, nil
 }
 
+func (p prollyCoveringIndexIter) WithOffset(off int) sql.RowIter {
+	p.offset = off
+	return p
+}
+
 // Next returns the next row from the iterator.
 func (p prollyCoveringIndexIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 	k, v, err := p.indexIter.Next(ctx)
@@ -225,7 +231,7 @@ func (p prollyCoveringIndexIter) Next(ctx *sql.Context, row sql.LazyRow) error {
 		return err
 	}
 
-	row.CopyRange(0, r...)
+	row.CopyRange(p.offset, r...)
 	return nil
 }
 

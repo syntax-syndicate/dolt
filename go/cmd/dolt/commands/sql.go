@@ -437,13 +437,13 @@ func execQuery(
 	format engine.PrintResultFormat,
 ) errhand.VerboseError {
 
-	sqlSch, rowIter, _, err := processQuery(sqlCtx, query, qryist)
+	sqlSch, rowIter, qFlags, err := processQuery(sqlCtx, query, qryist)
 	if err != nil {
 		return formatQueryError("", err)
 	}
 
 	if rowIter != nil {
-		err = engine.PrettyPrintResults(sqlCtx, format, sqlSch, rowIter)
+		err = engine.PrettyPrintResults(sqlCtx, format, sqlSch, rowIter, qFlags)
 		if err != nil {
 			return errhand.VerboseErrorFromError(err)
 		}
@@ -640,7 +640,7 @@ func execBatchMode(ctx *sql.Context, qryist cli.Queryist, input io.Reader, conti
 
 		// store start time for query
 		ctx.SetQueryTime(time.Now())
-		sqlSch, rowIter, _, err := processParsedQuery(ctx, query, qryist, sqlStatement)
+		sqlSch, rowIter, qFlags, err := processParsedQuery(ctx, query, qryist, sqlStatement)
 		if err != nil {
 			err = buildBatchSqlErr(scanner.state.statementStartLine, query, err)
 			if !continueOnErr {
@@ -659,7 +659,7 @@ func execBatchMode(ctx *sql.Context, qryist cli.Queryist, input io.Reader, conti
 					fileReadProg.printNewLineIfNeeded()
 				}
 			}
-			err = engine.PrettyPrintResults(ctx, format, sqlSch, rowIter)
+			err = engine.PrettyPrintResults(ctx, format, sqlSch, rowIter, qFlags)
 			if err != nil {
 				err = buildBatchSqlErr(scanner.state.statementStartLine, query, err)
 				if !continueOnErr {
@@ -799,15 +799,16 @@ func execShell(sqlCtx *sql.Context, qryist cli.Queryist, format engine.PrintResu
 				lastSqlCmd = query
 				var sqlSch sql.Schema
 				var rowIter sql.RowIter
-				if sqlSch, rowIter, _, err = processQuery(sqlCtx, query, qryist); err != nil {
+				var qFlags *sql.QueryFlags
+				if sqlSch, rowIter, qFlags, err = processQuery(sqlCtx, query, qryist); err != nil {
 					verr := formatQueryError("", err)
 					shell.Println(verr.Verbose())
 				} else if rowIter != nil {
 					switch closureFormat {
 					case engine.FormatTabular, engine.FormatVertical:
-						err = engine.PrettyPrintResultsExtended(sqlCtx, closureFormat, sqlSch, rowIter)
+						err = engine.PrettyPrintResultsExtended(sqlCtx, closureFormat, sqlSch, rowIter, qFlags)
 					default:
-						err = engine.PrettyPrintResults(sqlCtx, closureFormat, sqlSch, rowIter)
+						err = engine.PrettyPrintResults(sqlCtx, closureFormat, sqlSch, rowIter, qFlags)
 					}
 
 					if err != nil {
@@ -1015,7 +1016,7 @@ func newCompleter(
 
 	sqlCtx.Session.LockWarnings()
 	defer sqlCtx.Session.UnlockWarnings()
-	_, iter, _, err := qryist.Query(sqlCtx, "select table_schema, table_name, column_name from information_schema.columns;")
+	_, iter, qFlags, err := qryist.Query(sqlCtx, "select table_schema, table_name, column_name from information_schema.columns;")
 	if err != nil {
 		return nil, err
 	}
@@ -1030,7 +1031,7 @@ func newCompleter(
 	identifiers := make(map[string]struct{})
 	var columnNames []string
 	for {
-		var r sql.LazyRow = sql.NewSqlRow(0)
+		r := sql.NewSqlRow(qFlags.MaxExprCnt)
 		err := iter.Next(sqlCtx, r)
 		if err == io.EOF {
 			break
