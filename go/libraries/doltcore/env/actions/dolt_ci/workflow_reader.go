@@ -21,13 +21,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dolthub/go-mysql-server/sql"
-	"github.com/dolthub/vitess/go/vt/sqlparser"
-
 	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
+	"github.com/dolthub/go-mysql-server/sql"
 )
 
 var ExpectedDoltCITablesOrdered = []doltdb.TableName{
@@ -455,29 +453,6 @@ func (d *doltWorkflowReader) sqlReadQuery(ctx *sql.Context, query string, cb fun
 	return nil
 }
 
-func (d *doltWorkflowReader) readRowValues(ctx *sql.Context, cb func(ctx context.Context, cvs ColumnValues) error, query string) error {
-	if query == "" {
-		return nil
-	}
-
-	sqlStatement, err := sqlparser.Parse(query)
-	if err == sqlparser.ErrEmpty {
-		return fmt.Errorf("Error parsing empty SQL statement")
-	} else if err != nil {
-		return fmt.Errorf("Error parsing SQL: %v.", err.Error())
-	}
-
-	switch sqlStatement.(type) {
-	case *sqlparser.Select, *sqlparser.OtherRead, *sqlparser.Show, *sqlparser.SetOp, *sqlparser.Explain:
-		return d.sqlReadQuery(ctx, query, cb)
-	case *sqlparser.Insert, *sqlparser.Update, *sqlparser.Delete, *sqlparser.DDL:
-		return fmt.Errorf("Error only read queries supported")
-	default:
-		return fmt.Errorf("Unsupported SQL statement: '%v'.", query)
-	}
-	return nil
-}
-
 func (d *doltWorkflowReader) getInitialWorkflowSavedQueryExpectedRowColumnResultBySavedQueryStepId(ctx *sql.Context, sqsID WorkflowSavedQueryStepId) (*WorkflowSavedQueryExpectedRowColumnResult, error) {
 	query := d.selectAllFromSavedQueryStepExpectedRowColumnResultsTableBySavedQueryStepIdQuery(string(sqsID))
 	workflowSavedQueryExpectedResults, err := d.retrieveWorkflowSavedQueryExpectedRowColumnResults(ctx, query)
@@ -552,7 +527,7 @@ func (d *doltWorkflowReader) retrieveWorkflowSavedQueryExpectedRowColumnResults(
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -573,7 +548,7 @@ func (d *doltWorkflowReader) retrieveWorkflowSavedQuerySteps(ctx *sql.Context, q
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +569,7 @@ func (d *doltWorkflowReader) retrieveWorkflowSteps(ctx *sql.Context, query strin
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -614,7 +589,7 @@ func (d *doltWorkflowReader) retrieveWorkflowJobs(ctx *sql.Context, query string
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +609,7 @@ func (d *doltWorkflowReader) retrieveWorkflowEventTriggerActivities(ctx *sql.Con
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -655,7 +630,7 @@ func (d *doltWorkflowReader) retrieveWorkflowEventTriggerBranches(ctx *sql.Conte
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -675,7 +650,7 @@ func (d *doltWorkflowReader) retrieveWorkflowEventTriggers(ctx *sql.Context, que
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -696,7 +671,7 @@ func (d *doltWorkflowReader) retrieveWorkflowEvent(ctx *sql.Context, query strin
 		return nil
 	}
 
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +689,7 @@ func (d *doltWorkflowReader) retrieveWorkflows(ctx *sql.Context, query string) (
 		workflows = append(workflows, wf)
 		return nil
 	}
-	err := d.readRowValues(ctx, cb, query)
+	err := d.sqlReadQuery(ctx, query, cb)
 	if err != nil {
 		return nil, err
 	}

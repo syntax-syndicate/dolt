@@ -117,7 +117,7 @@ func CreateDoltCITables(ctx *sql.Context, db sqle.Database, commiterName, commit
 
 	parents := []*doltdb.Commit{parent}
 
-	meta, err := datas.NewCommitMeta(commiterName, commiterEmail, "Successfully created Dolt CI tables")
+	meta, err := datas.NewCommitMeta(commiterName, commiterEmail, "Successfully initialized Dolt workflows")
 	if err != nil {
 		return err
 	}

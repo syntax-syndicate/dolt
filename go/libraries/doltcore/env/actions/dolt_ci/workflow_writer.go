@@ -17,22 +17,14 @@ package dolt_ci
 import (
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/dolthub/go-mysql-server/sql"
-	"github.com/dolthub/vitess/go/vt/sqlparser"
-
 	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
-	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
-	"github.com/dolthub/dolt/go/store/datas"
+	"github.com/dolthub/go-mysql-server/sql"
 )
 
 var ErrWorkflowNameIsNil = errors.New("workflow name is nil")
-var ErrReadQueriesNotSupported = errors.New("read queries not supported in this context")
-var ErrAlterDDLQueriesNotSupported = errors.New("alter and ddl queries not supported in this context")
 
 type WorkflowWriter interface {
 	StoreAndCommit(ctx *sql.Context, db sqle.Database, workflow *Workflow) error
@@ -61,13 +53,17 @@ func (d *doltWorkflowWriter) writeWorkflow(ctx *sql.Context, workflow *Workflow)
 	}
 
 	for _, statement := range statements {
-		err = d.execWriteQuery(ctx, statement)
+		err = d.sqlWriteQuery(ctx, statement)
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (d *doltWorkflowWriter) commitWorkflow(ctx *sql.Context, workflow *Workflow) error {
+	return d.sqlWriteQuery(ctx, fmt.Sprintf("CALL DOLT_COMMIT('-Am' 'Successfully stored workflow: %s', '--author', '%s <%s>');", string(*workflow.Name), d.commiterName, d.commiterEmail))
 }
 
 // TODO: fix all the insert templates!!!
@@ -79,26 +75,6 @@ func (d *doltWorkflowWriter) sqlWriteQuery(ctx *sql.Context, query string) error
 	}
 	_, err = sql.RowIterToRows(ctx, rowIter)
 	return err
-}
-
-func (d *doltWorkflowWriter) execWriteQuery(ctx *sql.Context, query string) error {
-	sqlStatement, err := sqlparser.Parse(query)
-	if err == sqlparser.ErrEmpty {
-		return fmt.Errorf("Error parsing empty SQL statement")
-	} else if err != nil {
-		return fmt.Errorf("Error parsing SQL: %v.", err.Error())
-	}
-
-	switch sqlStatement.(type) {
-	case *sqlparser.Select, *sqlparser.OtherRead, *sqlparser.Show, *sqlparser.SetOp, *sqlparser.Explain:
-		return ErrReadQueriesNotSupported
-	case *sqlparser.Insert, *sqlparser.Update, *sqlparser.Delete:
-		return d.sqlWriteQuery(ctx, query)
-	case *sqlparser.AlterTable, *sqlparser.DDL:
-		return ErrAlterDDLQueriesNotSupported
-	default:
-		return fmt.Errorf("Unsupported SQL statement: '%v'.", query)
-	}
 }
 
 func (d *doltWorkflowWriter) getWorkflowInsertUpdates(workflow *Workflow) ([]string, error) {
@@ -262,65 +238,5 @@ func (d *doltWorkflowWriter) StoreAndCommit(ctx *sql.Context, db sqle.Database, 
 		return err
 	}
 
-	dbName := ctx.GetCurrentDatabase()
-	dSess := dsess.DSessFromSess(ctx.Session)
-
-	ddb, exists := dSess.GetDoltDB(ctx, dbName)
-	if !exists {
-		return fmt.Errorf("database not found in database %s", dbName)
-	}
-
-	roots, ok := dSess.GetRoots(ctx, dbName)
-	if !ok {
-		return fmt.Errorf("roots not found in database %s", dbName)
-	}
-
-	roots, err = actions.StageTables(ctx, roots, ExpectedDoltCITablesOrdered, true)
-	if err != nil {
-		return err
-	}
-
-	ws, err := dSess.WorkingSet(ctx, dbName)
-	if err != nil {
-		return err
-	}
-
-	ws = ws.WithWorkingRoot(roots.Working)
-	ws = ws.WithStagedRoot(roots.Staged)
-
-	wsHash, err := ws.HashOf()
-	if err != nil {
-		return err
-	}
-
-	wRef := ws.Ref()
-	pRef, err := wRef.ToHeadRef()
-	if err != nil {
-		return err
-	}
-
-	parent, err := ddb.ResolveCommitRef(ctx, pRef)
-	if err != nil {
-		return err
-	}
-
-	parents := []*doltdb.Commit{parent}
-
-	meta, err := datas.NewCommitMeta(d.commiterName, d.commiterEmail, fmt.Sprintf("Successfully stored Dolt CI Workflow: %s", string(*workflow.Name)))
-	if err != nil {
-		return err
-	}
-
-	pcm, err := ddb.NewPendingCommit(ctx, roots, parents, meta)
-	if err != nil {
-		return err
-	}
-
-	wsMeta := &datas.WorkingSetMeta{
-		Name:      d.commiterName,
-		Email:     d.commiterEmail,
-		Timestamp: uint64(time.Now().Unix()),
-	}
-	_, err = ddb.CommitWithWorkingSet(ctx, pRef, wRef, pcm, ws, wsHash, wsMeta, nil)
-	return err
+	return d.commitWorkflow(ctx, workflow)
 }
