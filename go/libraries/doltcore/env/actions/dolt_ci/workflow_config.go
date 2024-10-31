@@ -44,9 +44,9 @@ type PullRequest struct {
 type WorkflowDispatch struct{}
 
 type On struct {
-	Push             Push             `yaml:"push"`
-	PullRequest      PullRequest      `yaml:"pull_request"`
-	WorkflowDispatch WorkflowDispatch `yaml:"workflow_dispatch"`
+	Push             *Push             `yaml:"push,omitempty"`
+	PullRequest      *PullRequest      `yaml:"pull_request,omitempty"`
+	WorkflowDispatch *WorkflowDispatch `yaml:"workflow_dispatch,omitempty"`
 }
 
 type WorkflowConfig struct {
@@ -55,7 +55,7 @@ type WorkflowConfig struct {
 	Jobs []Job  `yaml:"jobs"`
 }
 
-func ParseWorkflow(r io.Reader) (workflow *WorkflowConfig, err error) {
+func ParseWorkflowConfig(r io.Reader) (workflow *WorkflowConfig, err error) {
 	workflow = &WorkflowConfig{}
 
 	decoder := yaml.NewDecoder(r)
@@ -63,4 +63,10 @@ func ParseWorkflow(r io.Reader) (workflow *WorkflowConfig, err error) {
 
 	err = decoder.Decode(workflow)
 	return
+}
+
+func ValidateWorkflowConfig(workflow *WorkflowConfig) error {
+	// todo: ensure branch names exist only once for each event
+	// todo: ensure activities exist only once for each event
+	return nil
 }

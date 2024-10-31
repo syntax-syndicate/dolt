@@ -119,6 +119,11 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
+	err = dolt_ci.ValidateWorkflowConfig(workflowConfig)
+	if err != nil {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+	}
+
 	wRW := dolt_ci.NewDoltWorkflowReadWriter(user, email, querist.Query)
 
 	db, err := newDatabase(sqlCtx, sqlCtx.GetCurrentDatabase(), dEnv, false)
@@ -160,7 +165,7 @@ func parseWorkflowConfig(path string) (workflow *dolt_ci.WorkflowConfig, err err
 			err = rerr
 		}
 	}()
-	workflow, err = dolt_ci.ParseWorkflow(f)
+	workflow, err = dolt_ci.ParseWorkflowConfig(f)
 	return
 }
 

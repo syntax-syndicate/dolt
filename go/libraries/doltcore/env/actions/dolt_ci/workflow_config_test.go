@@ -74,7 +74,7 @@ jobs:
 		expectedRows,
 	)
 
-	wf, err := ParseWorkflow(strings.NewReader(yml))
+	wf, err := ParseWorkflowConfig(strings.NewReader(yml))
 	require.NoError(t, err)
 	require.NotNil(t, wf)
 
