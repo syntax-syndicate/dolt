@@ -157,6 +157,18 @@ var getWriteableSystemTables = func() []string {
 		ProceduresTableName,
 		IgnoreTableName,
 		RebaseTableName,
+
+		// todo: find way to make these writable by the dolt process
+		// todo: but not by user
+		WorkflowsTableName,
+		WorkflowEventsTableName,
+		WorkflowEventTriggersTableName,
+		WorkflowEventTriggerBranchesTableName,
+		WorkflowEventTriggerActivitiesTableName,
+		WorkflowJobsTableName,
+		WorkflowStepsTableName,
+		WorkflowSavedQueryStepsTableName,
+		WorkflowSavedQueryStepExpectedRowColumnResultsTableName,
 	}
 }
 

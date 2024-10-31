@@ -100,6 +100,11 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		defer closeFunc()
 	}
 
+	user, email, err := env.GetNameAndEmail(dEnv.Config)
+	if err != nil {
+		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
+	}
+
 	hasTables, err := schema.HasDoltCITables(sqlCtx)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
@@ -114,7 +119,7 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	wRW := dolt_ci.NewDoltWorkflowReadWriter(querist.Query)
+	wRW := dolt_ci.NewDoltWorkflowReadWriter(user, email, querist.Query)
 
 	db, err := newDatabase(sqlCtx, sqlCtx.GetCurrentDatabase(), dEnv, false)
 	if err != nil {
@@ -135,7 +140,7 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 
 	workflow = &dolt_ci.Workflow{Name: &name}
 
-	err = wRW.Store(sqlCtx, db, workflow)
+	err = wRW.StoreAndCommit(sqlCtx, db, workflow)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}

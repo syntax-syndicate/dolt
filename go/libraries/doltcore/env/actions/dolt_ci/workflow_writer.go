@@ -17,72 +17,54 @@ package dolt_ci
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dolthub/go-mysql-server/sql"
 	"github.com/dolthub/vitess/go/vt/sqlparser"
 
 	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
+	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
+	"github.com/dolthub/dolt/go/store/datas"
 )
 
+var ErrWorkflowNameIsNil = errors.New("workflow name is nil")
 var ErrReadQueriesNotSupported = errors.New("read queries not supported in this context")
 var ErrAlterDDLQueriesNotSupported = errors.New("alter and ddl queries not supported in this context")
 
 type WorkflowWriter interface {
-	Store(ctx *sql.Context, db sqle.Database, workflow *Workflow) error
+	StoreAndCommit(ctx *sql.Context, db sqle.Database, workflow *Workflow) error
 }
 
 type doltWorkflowWriter struct {
-	queryFunc QueryFunc
+	commiterName  string
+	commiterEmail string
+	queryFunc     QueryFunc
 }
 
 var _ WorkflowWriter = &doltWorkflowWriter{}
 
-func NewWorkflowWriter(queryFunc QueryFunc) *doltWorkflowWriter {
-	return &doltWorkflowWriter{queryFunc: queryFunc}
+func NewWorkflowWriter(commiterName, commiterEmail string, queryFunc QueryFunc) *doltWorkflowWriter {
+	return &doltWorkflowWriter{
+		commiterName:  commiterName,
+		commiterEmail: commiterEmail,
+		queryFunc:     queryFunc,
+	}
 }
 
 func (d *doltWorkflowWriter) writeWorkflow(ctx *sql.Context, workflow *Workflow) error {
-	dbName := ctx.GetCurrentDatabase()
-	dSess := dsess.DSessFromSess(ctx.Session)
-
-	_, exists := dSess.GetDoltDB(ctx, dbName)
-	if !exists {
-		return fmt.Errorf("database not found in database %s", dbName)
-	}
-
-	//roots, ok := dSess.GetRoots(ctx, dbName)
-	//if !ok {
-	//	return nil, fmt.Errorf("roots not found in database %s", dbName)
-	//}
-
-	//root := roots.Working
-
 	statements, err := d.getInsertUpdateStatements(workflow)
 	if err != nil {
 		return err
 	}
 
 	for _, statement := range statements {
-		// Run write statement
 		err = d.execWriteQuery(ctx, statement)
 		if err != nil {
 			return err
 		}
-
-		//newRoot, _, err = repoDataUseCase.GetSqlUpdateQueryResults(ctx, db, refName, statement)
-		//if err != nil {
-		//	return err
-		//}
-		//
-		////// todo: this message sucks, fix it
-		////commitMsg := "Update Dolt CI table: " + statement
-		////_, err = repoDataUseCase.CreateCommitFromRoot(ctx, newRoot, refName, callingUserName, emailAddress, commitMsg, db)
-		////if err != nil {
-		////	return err
-		////}
 	}
 
 	return nil
@@ -120,8 +102,11 @@ func (d *doltWorkflowWriter) execWriteQuery(ctx *sql.Context, query string) erro
 }
 
 func (d *doltWorkflowWriter) getWorkflowInsertUpdates(workflow *Workflow) ([]string, error) {
+	if workflow.Name == nil {
+		return []string{}, ErrWorkflowNameIsNil
+	}
 	statements := make([]string, 0)
-	insertUpdateStatement := fmt.Sprintf("insert ignore into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, doltdb.WorkflowsTableName, workflow.Name)
+	insertUpdateStatement := fmt.Sprintf("insert ignore into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, string(*workflow.Name))
 	statements = append(statements, insertUpdateStatement)
 	return statements, nil
 }
@@ -244,7 +229,7 @@ func (d *doltWorkflowWriter) getWorkflowJobInsertUpdates(workflowName string, jo
 
 func (d *doltWorkflowWriter) getInsertUpdateStatements(workflow *Workflow) ([]string, error) {
 	if workflow.Name == nil {
-		return nil, errors.New("workflow name is nil")
+		return nil, ErrWorkflowNameIsNil
 	}
 	statements := make([]string, 0)
 	workflowInsertUpdates, err := d.getWorkflowInsertUpdates(workflow)
@@ -267,9 +252,75 @@ func (d *doltWorkflowWriter) getInsertUpdateStatements(workflow *Workflow) ([]st
 	return statements, nil
 }
 
-func (d *doltWorkflowWriter) Store(ctx *sql.Context, db sqle.Database, workflow *Workflow) error {
+func (d *doltWorkflowWriter) StoreAndCommit(ctx *sql.Context, db sqle.Database, workflow *Workflow) error {
 	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Write); err != nil {
 		return err
 	}
-	return d.writeWorkflow(ctx, workflow)
+
+	err := d.writeWorkflow(ctx, workflow)
+	if err != nil {
+		return err
+	}
+
+	dbName := ctx.GetCurrentDatabase()
+	dSess := dsess.DSessFromSess(ctx.Session)
+
+	ddb, exists := dSess.GetDoltDB(ctx, dbName)
+	if !exists {
+		return fmt.Errorf("database not found in database %s", dbName)
+	}
+
+	roots, ok := dSess.GetRoots(ctx, dbName)
+	if !ok {
+		return fmt.Errorf("roots not found in database %s", dbName)
+	}
+
+	roots, err = actions.StageTables(ctx, roots, ExpectedDoltCITablesOrdered, true)
+	if err != nil {
+		return err
+	}
+
+	ws, err := dSess.WorkingSet(ctx, dbName)
+	if err != nil {
+		return err
+	}
+
+	ws = ws.WithWorkingRoot(roots.Working)
+	ws = ws.WithStagedRoot(roots.Staged)
+
+	wsHash, err := ws.HashOf()
+	if err != nil {
+		return err
+	}
+
+	wRef := ws.Ref()
+	pRef, err := wRef.ToHeadRef()
+	if err != nil {
+		return err
+	}
+
+	parent, err := ddb.ResolveCommitRef(ctx, pRef)
+	if err != nil {
+		return err
+	}
+
+	parents := []*doltdb.Commit{parent}
+
+	meta, err := datas.NewCommitMeta(d.commiterName, d.commiterEmail, fmt.Sprintf("Successfully stored Dolt CI Workflow: %s", string(*workflow.Name)))
+	if err != nil {
+		return err
+	}
+
+	pcm, err := ddb.NewPendingCommit(ctx, roots, parents, meta)
+	if err != nil {
+		return err
+	}
+
+	wsMeta := &datas.WorkingSetMeta{
+		Name:      d.commiterName,
+		Email:     d.commiterEmail,
+		Timestamp: uint64(time.Now().Unix()),
+	}
+	_, err = ddb.CommitWithWorkingSet(ctx, pRef, wRef, pcm, ws, wsHash, wsMeta, nil)
+	return err
 }

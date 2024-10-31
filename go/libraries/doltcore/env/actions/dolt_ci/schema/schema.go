@@ -23,22 +23,11 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions"
+	"github.com/dolthub/dolt/go/libraries/doltcore/env/actions/dolt_ci"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
 	"github.com/dolthub/dolt/go/store/datas"
 )
-
-var ExpectedDoltCITables = []doltdb.TableName{
-	doltdb.TableName{Name: doltdb.WorkflowsTableName},
-	doltdb.TableName{Name: doltdb.WorkflowEventsTableName},
-	doltdb.TableName{Name: doltdb.WorkflowEventTriggersTableName},
-	doltdb.TableName{Name: doltdb.WorkflowEventTriggerBranchesTableName},
-	doltdb.TableName{Name: doltdb.WorkflowEventTriggerActivitiesTableName},
-	doltdb.TableName{Name: doltdb.WorkflowJobsTableName},
-	doltdb.TableName{Name: doltdb.WorkflowStepsTableName},
-	doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName},
-	doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName},
-}
 
 func HasDoltCITables(ctx *sql.Context) (bool, error) {
 	dbName := ctx.GetCurrentDatabase()
@@ -53,7 +42,7 @@ func HasDoltCITables(ctx *sql.Context) (bool, error) {
 	exists := 0
 	var hasSome bool
 	var hasAll bool
-	for _, tableName := range ExpectedDoltCITables {
+	for _, tableName := range dolt_ci.ExpectedDoltCITablesOrdered {
 		found, err := root.HasTable(ctx, tableName)
 		if err != nil {
 			return false, err
@@ -63,8 +52,8 @@ func HasDoltCITables(ctx *sql.Context) (bool, error) {
 		}
 	}
 
-	hasSome = exists > 0 && exists < len(ExpectedDoltCITables)
-	hasAll = exists == len(ExpectedDoltCITables)
+	hasSome = exists > 0 && exists < len(dolt_ci.ExpectedDoltCITablesOrdered)
+	hasAll = exists == len(dolt_ci.ExpectedDoltCITablesOrdered)
 	if !hasSome && !hasAll {
 		return false, nil
 	}
@@ -74,7 +63,7 @@ func HasDoltCITables(ctx *sql.Context) (bool, error) {
 	return true, nil
 }
 
-func CreateDoltCITables(ctx *sql.Context, db sqle.Database, committerName, committerEmail string) error {
+func CreateDoltCITables(ctx *sql.Context, db sqle.Database, commiterName, commiterEmail string) error {
 	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Write); err != nil {
 		return err
 	}
@@ -97,7 +86,7 @@ func CreateDoltCITables(ctx *sql.Context, db sqle.Database, committerName, commi
 		return fmt.Errorf("roots not found in database %s", dbName)
 	}
 
-	roots, err = actions.StageTables(ctx, roots, ExpectedDoltCITables, true)
+	roots, err = actions.StageTables(ctx, roots, dolt_ci.ExpectedDoltCITablesOrdered, true)
 	if err != nil {
 		return err
 	}
@@ -128,7 +117,7 @@ func CreateDoltCITables(ctx *sql.Context, db sqle.Database, committerName, commi
 
 	parents := []*doltdb.Commit{parent}
 
-	meta, err := datas.NewCommitMeta(committerName, committerEmail, "Successfully created Dolt CI tables")
+	meta, err := datas.NewCommitMeta(commiterName, commiterEmail, "Successfully created Dolt CI tables")
 	if err != nil {
 		return err
 	}
@@ -139,8 +128,8 @@ func CreateDoltCITables(ctx *sql.Context, db sqle.Database, committerName, commi
 	}
 
 	wsMeta := &datas.WorkingSetMeta{
-		Name:      committerName,
-		Email:     committerEmail,
+		Name:      commiterName,
+		Email:     commiterEmail,
 		Timestamp: uint64(time.Now().Unix()),
 	}
 	_, err = ddb.CommitWithWorkingSet(ctx, pRef, wRef, pcm, ws, wsHash, wsMeta, nil)

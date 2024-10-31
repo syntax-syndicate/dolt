@@ -30,16 +30,16 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
 )
 
-var expectedDoltCITablesOrdered = []string{
-	doltdb.WorkflowsTableName,
-	doltdb.WorkflowEventsTableName,
-	doltdb.WorkflowEventTriggersTableName,
-	doltdb.WorkflowEventTriggerBranchesTableName,
-	doltdb.WorkflowEventTriggerActivitiesTableName,
-	doltdb.WorkflowJobsTableName,
-	doltdb.WorkflowStepsTableName,
-	doltdb.WorkflowSavedQueryStepsTableName,
-	doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName,
+var ExpectedDoltCITablesOrdered = []doltdb.TableName{
+	doltdb.TableName{Name: doltdb.WorkflowsTableName},
+	doltdb.TableName{Name: doltdb.WorkflowEventsTableName},
+	doltdb.TableName{Name: doltdb.WorkflowEventTriggersTableName},
+	doltdb.TableName{Name: doltdb.WorkflowEventTriggerBranchesTableName},
+	doltdb.TableName{Name: doltdb.WorkflowEventTriggerActivitiesTableName},
+	doltdb.TableName{Name: doltdb.WorkflowJobsTableName},
+	doltdb.TableName{Name: doltdb.WorkflowStepsTableName},
+	doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepsTableName},
+	doltdb.TableName{Name: doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName},
 }
 
 const (
@@ -53,7 +53,6 @@ type QueryFunc func(ctx *sql.Context, query string) (sql.Schema, sql.RowIter, *s
 
 type WorkflowReader interface {
 	GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error)
-	//ListWorkflowsAtRef(ctx context.Context, refName, cSpecStr string) ([]Workflow, error)
 }
 
 type doltWorkflowReader struct {
@@ -411,9 +410,9 @@ func (d *doltWorkflowReader) newWorkflowEventTriggerActivity(cvs ColumnValues) (
 	return ta, nil
 }
 
-func (d *doltWorkflowReader) validateTables(shaTables map[string]struct{}) error {
-	for _, t := range expectedDoltCITablesOrdered {
-		_, ok := shaTables[t]
+func (d *doltWorkflowReader) validateTables(tableMap map[string]struct{}) error {
+	for _, t := range ExpectedDoltCITablesOrdered {
+		_, ok := tableMap[t.Name]
 		if !ok {
 			return errors.New(fmt.Sprintf("expected workflow table not found: %s", t))
 		}
@@ -751,7 +750,7 @@ func (d *doltWorkflowReader) listWorkflowsAtRef(ctx *sql.Context) ([]*Workflow, 
 
 	for _, workflow := range workflows {
 		if workflow.Name == nil {
-			return nil, errors.New("workflow name was nil")
+			return nil, ErrWorkflowNameIsNil
 		}
 		err = d.updateWorkflowEvents(ctx, workflow, string(*workflow.Name))
 		if err != nil {
@@ -872,48 +871,6 @@ func (d *doltWorkflowReader) getWorkflow(ctx *sql.Context, workflowName string) 
 	return workflow, nil
 }
 
-//func (d *doltWorkflowReader) listWorkflowsOnBranchRef(ctx context.Context, repoDataUseCase RepositoryDataUseCase, repoID RepositoryID, owner, repo, refName, cSpecStr string) ([]*Workflow, error) {
-//	db, err := repoDataUseCase.GetReadOnlyDoltDatabase(ctx, owner, repo)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	// todo: test with different branches with same commit hash
-//	commit, err := repoDataUseCase.GetDoltCoreCommit(ctx, db, cSpecStr, nil)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	root, err := commit.GetRootValue(ctx)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	commitHash, err := commit.HashOf()
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	tables, err := root.GetTableNames(ctx, doltdb.DefaultSchemaName)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	tableMap := make(map[string]struct{})
-//	for _, table := range tables {
-//		if strings.HasPrefix(table, DoltCIDoltTablePrefix) {
-//			tableMap[table] = struct{}{}
-//		}
-//	}
-//
-//	err = d.validateTables(ctx, tableMap)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	return d.listWorkflowsAtRef(ctx, repoDataUseCase, db, repoID, refName, commitHash.String())
-//}
-
 func (d *doltWorkflowReader) GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error) {
 	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Read); err != nil {
 		return nil, err
@@ -953,7 +910,3 @@ func (d *doltWorkflowReader) GetWorkflow(ctx *sql.Context, db sqle.Database, wor
 
 	return d.getWorkflow(ctx, workflowName)
 }
-
-//func (d *doltWorkflowReader) ListWorkflowsAtRef(ctx context.Context, repoDataUseCase RepositoryDataUseCase, repoID RepositoryID, owner, repo, refName, cSpecStr string) ([]*Workflow, error) {
-//	return d.listWorkflowsOnBranchRef(ctx, repoDataUseCase, repoID, owner, repo, refName, cSpecStr)
-//}

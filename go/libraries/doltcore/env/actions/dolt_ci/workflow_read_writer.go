@@ -32,9 +32,9 @@ type doltWorkflowReadWriter struct {
 
 var _ WorkflowReadWriter = &doltWorkflowReadWriter{}
 
-func NewDoltWorkflowReadWriter(queryFunc QueryFunc) *doltWorkflowReadWriter {
+func NewDoltWorkflowReadWriter(commiterName, commiterEmail string, queryFunc QueryFunc) *doltWorkflowReadWriter {
 	return &doltWorkflowReadWriter{
-		w: NewWorkflowWriter(queryFunc),
+		w: NewWorkflowWriter(commiterName, commiterEmail, queryFunc),
 		r: NewWorkflowReader(queryFunc),
 	}
 }
@@ -43,6 +43,6 @@ func (d *doltWorkflowReadWriter) GetWorkflow(ctx *sql.Context, db sqle.Database,
 	return d.r.GetWorkflow(ctx, db, workflowName)
 }
 
-func (d *doltWorkflowReadWriter) Store(ctx *sql.Context, db sqle.Database, workflow *Workflow) error {
-	return d.w.Store(ctx, db, workflow)
+func (d *doltWorkflowReadWriter) StoreAndCommit(ctx *sql.Context, db sqle.Database, workflow *Workflow) error {
+	return d.w.StoreAndCommit(ctx, db, workflow)
 }
