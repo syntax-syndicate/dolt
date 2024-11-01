@@ -22,6 +22,7 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
 	"github.com/dolthub/go-mysql-server/sql"
+	"github.com/google/uuid"
 	"strconv"
 	"time"
 )
@@ -108,7 +109,51 @@ func (d *doltWorkflowManager) selectAllFromWorkflowEventTriggerActivitiesTableBy
 	return fmt.Sprintf("select * from %s where `%s` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName, triggerID)
 }
 
+// todo: add select by ids for each thing
+
 // todo: add inserts for each thing
+func (d *doltWorkflowManager) insertIntoWorkflowsTableQuery(workflowName string) (string, string) {
+	return workflowName, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, workflowName)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowEventsTableQuery(workflowName string, eventType int) (string, string) {
+	eventID := uuid.NewString()
+	return eventID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`) values ('%s', '%s', %d);", doltdb.WorkflowEventsTableName, doltdb.WorkflowEventsIdPkColName, doltdb.WorkflowEventsWorkflowNameFkColName, doltdb.WorkflowEventsEventTypeColName, eventID, workflowName, eventType)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowEventTriggersTableQuery(eventID string, triggerType int) (string, string) {
+	triggerID := uuid.NewString()
+	return triggerID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`) values ('%s', '%s', %d);", doltdb.WorkflowEventTriggersTableName, doltdb.WorkflowEventTriggersIdPkColName, doltdb.WorkflowEventTriggersWorkflowEventsIdFkColName, doltdb.WorkflowEventTriggersEventTriggerTypeColName, triggerID, eventID, triggerType)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowEventTriggerBranchesTableQuery(triggerID, branch string) (string, string) {
+	branchID := uuid.NewString()
+	return branchID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`) values ('%s', '%s', '%s');", doltdb.WorkflowEventTriggerBranchesTableName, doltdb.WorkflowEventTriggerBranchesIdPkColName, doltdb.WorkflowEventTriggerBranchesWorkflowEventTriggersIdFkColName, doltdb.WorkflowEventTriggerBranchesBranchColName, branchID, triggerID, branch)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowEventTriggerActivitiesTableQuery(triggerID, activity string) (string, string) {
+	activityID := uuid.NewString()
+	return activityID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`) values ('%s', '%s', '%s');", doltdb.WorkflowEventTriggerActivitiesTableName, doltdb.WorkflowEventTriggerActivitiesIdPkColName, doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName, doltdb.WorkflowEventTriggerActivitiesActivityColName, activityID, triggerID, activity)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowJobsTableQuery(jobName, workflowName string) (string, string) {
+	jobID := uuid.NewString()
+	return jobID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`, `%s`, `%s`) values ('%s', '%s', '%s', now(), now());", doltdb.WorkflowJobsTableName, doltdb.WorkflowJobsIdPkColName, doltdb.WorkflowJobsNameColName, doltdb.WorkflowJobsWorkflowNameFkColName, doltdb.WorkflowJobsCreatedAtColName, doltdb.WorkflowJobsUpdatedAtColName, jobID, jobName, workflowName)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowStepsTableQuery(stepName, jobID string, stepOrder, stepType int) (string, string) {
+	stepID := uuid.NewString()
+	return stepID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`, `%s`, `%s`, `%s`, `%s`) values ('%s', '%s', '%s', %d, %d, now(), now());", doltdb.WorkflowStepsTableName, doltdb.WorkflowStepsIdPkColName, doltdb.WorkflowStepsNameColName, doltdb.WorkflowStepsWorkflowJobIdFkColName, doltdb.WorkflowStepsStepOrderColName, doltdb.WorkflowStepsStepTypeColName, doltdb.WorkflowStepsCreatedAtColName, doltdb.WorkflowStepsUpdatedAtColName, stepID, stepName, jobID, stepOrder, stepType)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowSavedQueryStepsTableQuery(savedQueryName, stepID string, expectedResultsType int) (string, string) {
+	savedQueryStepID := uuid.NewString()
+	return savedQueryStepID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`, `%s`) values ('%s', '%s', '%s', %d);", doltdb.WorkflowSavedQueryStepsTableName, doltdb.WorkflowSavedQueryStepsIdPkColName, doltdb.WorkflowSavedQueryStepsWorkflowStepIdFkColName, doltdb.WorkflowSavedQueryStepsSavedQueryNameColName, doltdb.WorkflowSavedQueryStepsExpectedResultsTypeColName, savedQueryStepID, stepID, savedQueryName, expectedResultsType, stepID)
+}
+
+func (d *doltWorkflowManager) insertIntoWorkflowSavedQueryStepExpectedRowColumnResultsTableQuery(savedQueryStepID string, expectedColumnComparisonType, expectedRowComparisonType int, expectedColumnCount, expectedRowCount int64) (string, string) {
+	return savedQueryStepID, fmt.Sprintf("insert into %s (`saved_query_step_id_fk`, `expected_column_count_comparison_type`,`expected_row_count_comparison_type`, `expected_column_count`, `expected_row_count`) values ('%s', %d, %d, %d, %d);", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountComparisonTypeColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName, savedQueryStepID, expectedColumnComparisonType, expectedRowComparisonType, expectedColumnCount, expectedRowCount)
+}
 
 // todo: add sql for update to each thing??
 
@@ -812,132 +857,6 @@ func (d *doltWorkflowManager) sqlWriteQuery(ctx *sql.Context, query string) erro
 	_, err = sql.RowIterToRows(ctx, rowIter)
 	return err
 }
-
-//func (d *doltWorkflowManager) getWorkflowInsertUpdates(workflow *Workflow) ([]string, error) {
-//	if workflow.Name == nil {
-//		return []string{}, ErrWorkflowNameIsNil
-//	}
-//	statements := make([]string, 0)
-//	insertUpdateStatement := fmt.Sprintf("insert ignore into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, string(*workflow.Name))
-//	statements = append(statements, insertUpdateStatement)
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowEventTriggerActivitiesInsertUpdates(triggerID WorkflowEventTriggerId, activities []*WorkflowEventTriggerActivity) ([]string, error) {
-//	statements := make([]string, 0)
-//	for _, activity := range activities {
-//		id := string(*activity.Id)
-//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_triggers_id_fk`, `activity`) values ('%s', '%s', '%s') on duplicate key update `workflow_event_triggers_id_fk` = '%s', `activity` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, id, triggerID, activity.Activity, triggerID, activity.Activity)
-//		statements = append(statements, insertUpdateStatement)
-//	}
-//	return statements, nil
-//}
-//
-//func (d *doltWorkflowManager) getWorkflowEventTriggerBranchesInsertUpdates(triggerID WorkflowEventTriggerId, branches []*WorkflowEventTriggerBranch) ([]string, error) {
-//	statements := make([]string, 0)
-//	for _, branch := range branches {
-//		id := string(*branch.Id)
-//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_triggers_id_fk`, `branch`) values ('%s', '%s', '%s') on duplicate key update `workflow_event_triggers_id_fk` = '%s', `branch` = '%s';", doltdb.WorkflowEventTriggerBranchesTableName, id, triggerID, branch.Branch, triggerID, branch.Branch)
-//		statements = append(statements, insertUpdateStatement)
-//
-//	}
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowEventTriggersInsertUpdates(eventID WorkflowEventId, triggers []*WorkflowEventTrigger) ([]string, error) {
-//	statements := make([]string, 0)
-//	for _, trigger := range triggers {
-//		id := string(*trigger.Id)
-//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_id_fk`, `event_trigger_type`) values ('%s', '%s', %d) on duplicate key update `workflow_event_id_fk` = '%s', `event_trigger_type` = %d;", doltdb.WorkflowEventTriggersTableName, id, eventID, trigger.EventTriggerType, eventID, trigger.EventTriggerType)
-//		statements = append(statements, insertUpdateStatement)
-//
-//		activityInsertUpdateStatements, err := d.getWorkflowEventTriggerActivitiesInsertUpdates(*trigger.Id, trigger.Activities)
-//		if err != nil {
-//			return nil, err
-//		}
-//		statements = append(statements, activityInsertUpdateStatements...)
-//
-//		branchesInsertUpdateStatements, err := d.getWorkflowEventTriggerBranchesInsertUpdates(*trigger.Id, trigger.Branches)
-//		if err != nil {
-//			return nil, err
-//		}
-//		statements = append(statements, branchesInsertUpdateStatements...)
-//	}
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowEventInsertUpdates(workflowName string, events []*WorkflowEvent) ([]string, error) {
-//	statements := make([]string, 0)
-//
-//	for _, event := range events {
-//		id := string(*event.Id)
-//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_name_fk`, `event_type`) values ('%s', '%s', %d) on duplicate key update `workflow_name_fk` = '%s', `event_type` = %d;", doltdb.WorkflowEventsTableName, id, workflowName, event.EventType, workflowName, event.EventType)
-//		statements = append(statements, insertUpdateStatement)
-//
-//		eventTriggerStatements, err := d.getWorkflowEventTriggersInsertUpdates(*event.Id, event.Triggers)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		statements = append(statements, eventTriggerStatements...)
-//	}
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowSavedQueryStepExpectedRowColumnResultInsertUpdates(savedQueryStepID WorkflowSavedQueryStepId, result *WorkflowSavedQueryExpectedRowColumnResult) ([]string, error) {
-//	statements := make([]string, 0)
-//	insertUpdateStatement := fmt.Sprintf("insert into %s (`saved_query_step_id_fk`, `expected_row_count_comparison_type`, `expected_column_count_comparison_type`, `expected_row_count`, `expected_column_count`) values ('%s', %d, %d, %d, %d)", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, savedQueryStepID, result.ExpectedRowCountComparisonType, result.ExpectedColumnCountComparisonType, result.ExpectedRowCount, result.ExpectedColumnCount)
-//	statements = append(statements, insertUpdateStatement)
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowStepSavedQueryStepInsertUpdates(stepID WorkflowStepId, savedQueryStep *WorkflowSavedQueryStep) ([]string, error) {
-//	statements := make([]string, 0)
-//	id := string(*savedQueryStep.Id)
-//	insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `step_id_fk`, `saved_query_name`, `saved_query_expected_results_type`) values ('%s', '%s', '%s', %d) on duplicate key update `step_id_fk` = '%s', `saved_query_name` = '%s', `saved_query_expected_results_type` = %d;", doltdb.WorkflowSavedQueryStepsTableName, id, stepID, savedQueryStep.SavedQueryName, savedQueryStep.SavedQueryExpectedResultsType, stepID, savedQueryStep.SavedQueryName, savedQueryStep.SavedQueryExpectedResultsType)
-//	statements = append(statements, insertUpdateStatement)
-//	if savedQueryStep.ExpectedRowColumnResult != nil {
-//		resultStatements, err := d.getWorkflowSavedQueryStepExpectedRowColumnResultInsertUpdates(*savedQueryStep.Id, savedQueryStep.ExpectedRowColumnResult)
-//		if err != nil {
-//			return nil, err
-//		}
-//		statements = append(statements, resultStatements...)
-//	}
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowStepInsertUpdates(jobID WorkflowJobId, steps []*WorkflowStep) ([]string, error) {
-//	statements := make([]string, 0)
-//	for _, step := range steps {
-//		id := string(*step.Id)
-//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `name`, `job_id_fk`, `step_order`, `step_type`, `created_at`, `updated_at`) values ('%s', '%s', '%s', %d, %d, now(), now()) on duplicate key update `name` = '%s', `job_id_fk` = '%s', `step_order` = %d, `step_type` = %d;", doltdb.WorkflowStepsTableName, id, step.Name, jobID, step.StepOrder, step.StepType, step.Name, jobID, step.StepOrder, step.StepType)
-//		statements = append(statements, insertUpdateStatement)
-//		if step.SavedQueryStep != nil {
-//			savedQueryStepInsertUpdateStatement, err := d.getWorkflowStepSavedQueryStepInsertUpdates(*step.Id, step.SavedQueryStep)
-//			if err != nil {
-//				return nil, err
-//			}
-//			statements = append(statements, savedQueryStepInsertUpdateStatement...)
-//		}
-//	}
-//	return statements, nil
-//}
-
-//func (d *doltWorkflowManager) getWorkflowJobInsertUpdates(workflowName string, jobs []*WorkflowJob) ([]string, error) {
-//	statements := make([]string, 0)
-//	for _, job := range jobs {
-//		id := string(*job.Id)
-//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `name`, `workflow_name_fk`, `created_at`, `updated_at`) values ('%s', '%s', '%s', now(), now()) on duplicate key update `name` = '%s', `workflow_name_fk` = '%s', `updated_at` = now();", doltdb.WorkflowJobsTableName, id, job.Name, workflowName, job.Name, workflowName)
-//		statements = append(statements, insertUpdateStatement)
-//
-//		stepInsertUpdateStatements, err := d.getWorkflowStepInsertUpdates(*job.Id, job.Steps)
-//		if err != nil {
-//			return nil, err
-//		}
-//		statements = append(statements, stepInsertUpdateStatements...)
-//	}
-//	return statements, nil
-//}
 
 func (d *doltWorkflowManager) StoreAndCommit(ctx *sql.Context, db sqle.Database, config *WorkflowConfig) error {
 	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Write); err != nil {

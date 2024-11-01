@@ -477,7 +477,7 @@ const (
 	WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountColName = "expected_column_count"
 
 	// WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName is the name of the expected row count column on the workflow saved query step expected row column results table
-	WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName = "expected_column_row"
+	WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName = "expected_row_count"
 )
 
 const (
