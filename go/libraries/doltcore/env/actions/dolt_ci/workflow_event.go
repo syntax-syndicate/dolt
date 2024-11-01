@@ -35,14 +35,6 @@ type WorkflowEvent struct {
 	Id             *WorkflowEventId  `db:"id"`
 	WorkflowNameFK *WorkflowName     `db:"workflow_name_fk"`
 	EventType      WorkflowEventType `db:"event_type"`
-	Triggers       []*WorkflowEventTrigger
-}
-
-func (w *WorkflowEvent) GetTriggers() []*WorkflowEventTrigger {
-	if w.Triggers != nil {
-		return w.Triggers
-	}
-	return []*WorkflowEventTrigger{}
 }
 
 func toWorkflowEventType(t int) (WorkflowEventType, error) {

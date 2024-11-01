@@ -34,14 +34,6 @@ type WorkflowSavedQueryStep struct {
 	SavedQueryName                string                                `db:"saved_query_name"`
 	WorkflowStepIdFK              *WorkflowStepId                       `db:"workflow_step_id_fk"`
 	SavedQueryExpectedResultsType WorkflowSavedQueryExpectedResultsType `db:"saved_query_expected_results_type"`
-	ExpectedRowColumnResult       *WorkflowSavedQueryExpectedRowColumnResult
-}
-
-func (w *WorkflowSavedQueryStep) GetExpectedRowColumnResult() *WorkflowSavedQueryExpectedRowColumnResult {
-	if w.ExpectedRowColumnResult != nil {
-		return w.ExpectedRowColumnResult
-	}
-	return &WorkflowSavedQueryExpectedRowColumnResult{}
 }
 
 func toWorkflowSavedQueryExpectedResultsType(t int) (WorkflowSavedQueryExpectedResultsType, error) {

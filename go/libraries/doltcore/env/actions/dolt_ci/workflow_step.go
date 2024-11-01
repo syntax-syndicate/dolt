@@ -38,11 +38,6 @@ type WorkflowStep struct {
 	StepOrder       int              `db:"step_order"`
 	CreatedAt       time.Time        `db:"created_at"`
 	UpdatedAt       time.Time        `db:"updated_at"`
-	SavedQueryStep  *WorkflowSavedQueryStep
-}
-
-func (w *WorkflowStep) GetSavedQueryStep() *WorkflowSavedQueryStep {
-	return w.SavedQueryStep
 }
 
 func toWorkflowStepType(t int) (WorkflowStepType, error) {

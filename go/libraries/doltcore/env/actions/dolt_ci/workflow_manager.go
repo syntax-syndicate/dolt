@@ -49,8 +49,6 @@ var ExpectedDoltCITablesOrdered = []doltdb.TableName{
 type QueryFunc func(ctx *sql.Context, query string) (sql.Schema, sql.RowIter, *sql.QueryFlags, error)
 
 type WorkflowManager interface {
-	GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error)
-	ListWorkflowEvents(ctx *sql.Context, db sqle.Database, workflowName string) ([]*WorkflowEvent, error)
 	StoreAndCommit(ctx *sql.Context, db sqle.Database, config *WorkflowConfig) error
 }
 
@@ -110,11 +108,49 @@ func (d *doltWorkflowManager) selectAllFromWorkflowEventTriggerActivitiesTableBy
 	return fmt.Sprintf("select * from %s where `%s` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName, triggerID)
 }
 
+// todo: add inserts for each thing
+
+// todo: add sql for update to each thing??
+
+// todo: add sql for delete from each thing
+func (d *doltWorkflowManager) deleteFromWorkflowsTableByWorkflowNameQuery(workflowName string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, workflowName)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowEventsTableByWorkflowEventIdQuery(eventId string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowEventsTableName, doltdb.WorkflowEventsIdPkColName, eventId)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowEventTriggersTableByWorkflowEventTriggerIdQuery(triggerID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowEventTriggersTableName, doltdb.WorkflowEventTriggersIdPkColName, triggerID)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowEventTriggerBranchesTableByEventTriggerBranchIdQuery(branchID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowEventTriggerBranchesTableName, doltdb.WorkflowEventTriggerBranchesIdPkColName, branchID)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowEventTriggerActivitiesTableByEventTriggerActivityIdQuery(activityID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, doltdb.WorkflowEventTriggerActivitiesIdPkColName, activityID)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowJobsTableByWorkflowJobIdQuery(jobID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowJobsTableName, doltdb.WorkflowJobsIdPkColName, jobID)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowStepsTableByWorkflowStepIdQuery(stepID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowStepsTableName, doltdb.WorkflowStepsIdPkColName, stepID)
+}
+
+func (d *doltWorkflowManager) deleteFromSavedQueryStepsTableByWorkflowStepIdQuery(savedQueryStepID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowSavedQueryStepsTableName, doltdb.WorkflowSavedQueryStepsIdPkColName, savedQueryStepID)
+}
+
+func (d *doltWorkflowManager) deleteFromSavedQueryStepExpectedRowColumnResultsTableBySavedQueryStepIdQuery(savedQueryStepID string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName, savedQueryStepID)
+}
+
 func (d *doltWorkflowManager) newWorkflow(cvs ColumnValues) (*Workflow, error) {
-	wf := &Workflow{
-		Events: make([]*WorkflowEvent, 0),
-		Jobs:   make([]*WorkflowJob, 0),
-	}
+	wf := &Workflow{}
 
 	for _, cv := range cvs {
 		switch cv.ColumnName {
@@ -142,9 +178,7 @@ func (d *doltWorkflowManager) newWorkflow(cvs ColumnValues) (*Workflow, error) {
 }
 
 func (d *doltWorkflowManager) newWorkflowEvent(cvs ColumnValues) (*WorkflowEvent, error) {
-	we := &WorkflowEvent{
-		Triggers: make([]*WorkflowEventTrigger, 0),
-	}
+	we := &WorkflowEvent{}
 
 	for _, cv := range cvs {
 		switch cv.ColumnName {
@@ -173,9 +207,7 @@ func (d *doltWorkflowManager) newWorkflowEvent(cvs ColumnValues) (*WorkflowEvent
 }
 
 func (d *doltWorkflowManager) newWorkflowJob(cvs ColumnValues) (*WorkflowJob, error) {
-	wj := &WorkflowJob{
-		Steps: make([]*WorkflowStep, 0),
-	}
+	wj := &WorkflowJob{}
 
 	for _, cv := range cvs {
 		switch cv.ColumnName {
@@ -342,10 +374,7 @@ func (d *doltWorkflowManager) newWorkflowStep(cvs ColumnValues) (*WorkflowStep, 
 }
 
 func (d *doltWorkflowManager) newWorkflowEventTrigger(cvs ColumnValues) (*WorkflowEventTrigger, error) {
-	et := &WorkflowEventTrigger{
-		Activities: make([]*WorkflowEventTriggerActivity, 0),
-		Branches:   make([]*WorkflowEventTriggerBranch, 0),
-	}
+	et := &WorkflowEventTrigger{}
 
 	for _, cv := range cvs {
 		switch cv.ColumnName {
@@ -488,7 +517,7 @@ func (d *doltWorkflowManager) sqlReadQuery(ctx *sql.Context, query string, cb fu
 	return nil
 }
 
-func (d *doltWorkflowManager) getInitialWorkflowSavedQueryExpectedRowColumnResultBySavedQueryStepId(ctx *sql.Context, sqsID WorkflowSavedQueryStepId) (*WorkflowSavedQueryExpectedRowColumnResult, error) {
+func (d *doltWorkflowManager) getWorkflowSavedQueryExpectedRowColumnResultBySavedQueryStepId(ctx *sql.Context, sqsID WorkflowSavedQueryStepId) (*WorkflowSavedQueryExpectedRowColumnResult, error) {
 	query := d.selectAllFromSavedQueryStepExpectedRowColumnResultsTableBySavedQueryStepIdQuery(string(sqsID))
 	workflowSavedQueryExpectedResults, err := d.retrieveWorkflowSavedQueryExpectedRowColumnResults(ctx, query)
 	if err != nil {
@@ -503,7 +532,7 @@ func (d *doltWorkflowManager) getInitialWorkflowSavedQueryExpectedRowColumnResul
 	return workflowSavedQueryExpectedResults[0], nil
 }
 
-func (d *doltWorkflowManager) getInitialWorkflowSavedQueryStepsByStepId(ctx *sql.Context, stepID WorkflowStepId) (*WorkflowSavedQueryStep, error) {
+func (d *doltWorkflowManager) getWorkflowSavedQueryStepsByStepId(ctx *sql.Context, stepID WorkflowStepId) (*WorkflowSavedQueryStep, error) {
 	query := d.selectAllFromSavedQueryStepsTableByWorkflowStepIdQuery(string(stepID))
 	savedQuerySteps, err := d.retrieveWorkflowSavedQuerySteps(ctx, query)
 	if err != nil {
@@ -518,33 +547,33 @@ func (d *doltWorkflowManager) getInitialWorkflowSavedQueryStepsByStepId(ctx *sql
 	return savedQuerySteps[0], nil
 }
 
-func (d *doltWorkflowManager) listInitialWorkflowStepsByJobId(ctx *sql.Context, jobID WorkflowJobId) ([]*WorkflowStep, error) {
+func (d *doltWorkflowManager) listWorkflowStepsByJobId(ctx *sql.Context, jobID WorkflowJobId) ([]*WorkflowStep, error) {
 	query := d.selectAllFromWorkflowStepsTableByWorkflowJobIdQuery(string(jobID))
 	return d.retrieveWorkflowSteps(ctx, query)
 }
 
-func (d *doltWorkflowManager) listInitialWorkflowJobsByWorkflowName(ctx *sql.Context, workflowName string) ([]*WorkflowJob, error) {
+func (d *doltWorkflowManager) listWorkflowJobsByWorkflowName(ctx *sql.Context, workflowName string) ([]*WorkflowJob, error) {
 	query := d.selectAllFromWorkflowJobsTableByWorkflowNameQuery(string(workflowName))
 	return d.retrieveWorkflowJobs(ctx, query)
 }
 
-func (d *doltWorkflowManager) listInitialWorkflowEventTriggerActivitiesByEventTriggerId(ctx *sql.Context, triggerID WorkflowEventTriggerId) ([]*WorkflowEventTriggerActivity, error) {
+func (d *doltWorkflowManager) listWorkflowEventTriggerActivitiesByEventTriggerId(ctx *sql.Context, triggerID WorkflowEventTriggerId) ([]*WorkflowEventTriggerActivity, error) {
 	query := d.selectAllFromWorkflowEventTriggerActivitiesTableByEventTriggerIdQuery(string(triggerID))
 	return d.retrieveWorkflowEventTriggerActivities(ctx, query)
 }
 
-func (d *doltWorkflowManager) listInitialWorkflowEventTriggersByEventId(ctx *sql.Context, eventID WorkflowEventId) ([]*WorkflowEventTrigger, error) {
+func (d *doltWorkflowManager) listWorkflowEventTriggersByEventId(ctx *sql.Context, eventID WorkflowEventId) ([]*WorkflowEventTrigger, error) {
 	query := d.selectAllFromWorkflowEventTriggersTableByWorkflowEventIdQuery(string(eventID))
 	return d.retrieveWorkflowEventTriggers(ctx, query)
 
 }
 
-func (d *doltWorkflowManager) listInitialWorkflowEventsByWorkflowName(ctx *sql.Context, workflowName string) ([]*WorkflowEvent, error) {
+func (d *doltWorkflowManager) listWorkflowEventsByWorkflowName(ctx *sql.Context, workflowName string) ([]*WorkflowEvent, error) {
 	query := d.selectAllFromWorkflowEventsTableByWorkflowNameQuery(string(workflowName))
 	return d.retrieveWorkflowEvent(ctx, query)
 }
 
-func (d *doltWorkflowManager) listInitialWorkflowEventTriggerBranchesByEventTriggerId(ctx *sql.Context, triggerID WorkflowEventTriggerId) ([]*WorkflowEventTriggerBranch, error) {
+func (d *doltWorkflowManager) listWorkflowEventTriggerBranchesByEventTriggerId(ctx *sql.Context, triggerID WorkflowEventTriggerId) ([]*WorkflowEventTriggerBranch, error) {
 	query := d.selectAllFromWorkflowEventTriggerBranchesTableByEventTriggerIdQuery(string(triggerID))
 	return d.retrieveWorkflowEventTriggerBranches(ctx, query)
 }
@@ -731,7 +760,7 @@ func (d *doltWorkflowManager) retrieveWorkflows(ctx *sql.Context, query string) 
 	return workflows, nil
 }
 
-func (d *doltWorkflowManager) getInitialWorkflow(ctx *sql.Context, workflowName string) (*Workflow, error) {
+func (d *doltWorkflowManager) getWorkflow(ctx *sql.Context, workflowName string) (*Workflow, error) {
 	query := d.selectOneFromWorkflowsTableQuery(string(workflowName))
 
 	workflows, err := d.retrieveWorkflows(ctx, query)
@@ -745,223 +774,6 @@ func (d *doltWorkflowManager) getInitialWorkflow(ctx *sql.Context, workflowName 
 		return nil, ErrMultipleWorkflowsFound
 	}
 	return workflows[0], nil
-}
-
-func (d *doltWorkflowManager) listInitialWorkflowsAtRefPage(ctx *sql.Context) ([]*Workflow, error) {
-	query := d.selectAllFromWorkflowsTableQuery()
-	return d.retrieveWorkflows(ctx, query)
-}
-
-func (d *doltWorkflowManager) listWorkflowsAtRef(ctx *sql.Context) ([]*Workflow, error) {
-	workflows, err := d.listInitialWorkflowsAtRefPage(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, workflow := range workflows {
-		if workflow.Name == nil {
-			return nil, ErrWorkflowNameIsNil
-		}
-		err = d.updateWorkflowEvents(ctx, workflow, string(*workflow.Name))
-		if err != nil {
-			return nil, err
-		}
-
-		err = d.updateWorkflowJobs(ctx, workflow, string(*workflow.Name))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return workflows, nil
-}
-
-func (d *doltWorkflowManager) updateWorkflowEvents(ctx *sql.Context, workflow *Workflow, workflowName string) error {
-	events, err := d.listInitialWorkflowEventsByWorkflowName(ctx, workflowName)
-	if err != nil {
-		return err
-	}
-
-	for _, event := range events {
-		if event.Id == nil {
-			return errors.New("workflow event id was nil")
-		}
-
-		triggers, err := d.listInitialWorkflowEventTriggersByEventId(ctx, *event.Id)
-		if err != nil {
-			return err
-		}
-
-		for _, trigger := range triggers {
-			if trigger.Id == nil {
-				return errors.New("workflow trigger id was nil")
-			}
-
-			triggerBranches, err := d.listInitialWorkflowEventTriggerBranchesByEventTriggerId(ctx, *trigger.Id)
-			if err != nil {
-				return err
-			}
-
-			triggerActivities, err := d.listInitialWorkflowEventTriggerActivitiesByEventTriggerId(ctx, *trigger.Id)
-			if err != nil {
-				return err
-			}
-
-			trigger.Branches = triggerBranches
-			trigger.Activities = triggerActivities
-		}
-
-		event.Triggers = triggers
-	}
-
-	workflow.Events = events
-	return nil
-}
-
-func (d *doltWorkflowManager) updateWorkflowJobs(ctx *sql.Context, workflow *Workflow, workflowName string) error {
-	jobs, err := d.listInitialWorkflowJobsByWorkflowName(ctx, workflowName)
-	if err != nil {
-		return err
-	}
-
-	for _, job := range jobs {
-		if job.Id == nil {
-			return errors.New("workflow job id was nil")
-		}
-
-		steps, err := d.listInitialWorkflowStepsByJobId(ctx, *job.Id)
-		if err != nil {
-			return err
-		}
-
-		for _, step := range steps {
-			if step.Id == nil {
-				return errors.New("workflow step id was nil")
-			}
-
-			savedQueryStep, err := d.getInitialWorkflowSavedQueryStepsByStepId(ctx, *step.Id)
-			if err != nil {
-				return err
-			}
-
-			if savedQueryStep != nil && savedQueryStep.Id != nil {
-				savedQueryExpectedResult, err := d.getInitialWorkflowSavedQueryExpectedRowColumnResultBySavedQueryStepId(ctx, *savedQueryStep.Id)
-				if err != nil {
-					return err
-				}
-
-				savedQueryStep.ExpectedRowColumnResult = savedQueryExpectedResult
-				step.SavedQueryStep = savedQueryStep
-			}
-		}
-
-		job.Steps = steps
-	}
-
-	workflow.Jobs = jobs
-	return nil
-}
-
-func (d *doltWorkflowManager) getWorkflow(ctx *sql.Context, workflowName string) (*Workflow, error) {
-	workflow, err := d.getInitialWorkflow(ctx, workflowName)
-	if err != nil {
-		return nil, err
-	}
-
-	err = d.updateWorkflowEvents(ctx, workflow, workflowName)
-	if err != nil {
-		return nil, err
-	}
-
-	err = d.updateWorkflowJobs(ctx, workflow, workflowName)
-	if err != nil {
-		return nil, err
-	}
-
-	return workflow, nil
-}
-
-func (d *doltWorkflowManager) listWorkflowEvents(ctx *sql.Context, workflowName string) ([]*WorkflowEvent, error) {
-	events, err := d.listInitialWorkflowEventsByWorkflowName(ctx, workflowName)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, event := range events {
-		if event.Id == nil {
-			return nil, errors.New("workflow event id was nil")
-		}
-
-		triggers, err := d.listInitialWorkflowEventTriggersByEventId(ctx, *event.Id)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, trigger := range triggers {
-			if trigger.Id == nil {
-				return nil, errors.New("workflow trigger id was nil")
-			}
-
-			triggerBranches, err := d.listInitialWorkflowEventTriggerBranchesByEventTriggerId(ctx, *trigger.Id)
-			if err != nil {
-				return nil, err
-			}
-
-			triggerActivities, err := d.listInitialWorkflowEventTriggerActivitiesByEventTriggerId(ctx, *trigger.Id)
-			if err != nil {
-				return nil, err
-			}
-
-			trigger.Branches = triggerBranches
-			trigger.Activities = triggerActivities
-		}
-
-		event.Triggers = triggers
-	}
-
-	return events, nil
-}
-
-func (d *doltWorkflowManager) ListWorkflowEvents(ctx *sql.Context, db sqle.Database, workflowName string) ([]*WorkflowEvent, error) {
-	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Read); err != nil {
-		return nil, err
-	}
-
-	err := d.validateWorkflowTables(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return d.listWorkflowEvents(ctx, workflowName)
-}
-
-func (d *doltWorkflowManager) GetWorkflow(ctx *sql.Context, db sqle.Database, workflowName string) (*Workflow, error) {
-	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Read); err != nil {
-		return nil, err
-	}
-
-	err := d.validateWorkflowTables(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return d.getWorkflow(ctx, workflowName)
-}
-
-func (d *doltWorkflowManager) writeWorkflow(ctx *sql.Context, workflow *Workflow) error {
-	statements, err := d.getInsertUpdateStatements(workflow)
-	if err != nil {
-		return err
-	}
-
-	for _, statement := range statements {
-		err = d.sqlWriteQuery(ctx, statement)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (d *doltWorkflowManager) storeFromConfig(ctx *sql.Context, config *WorkflowConfig) (*Workflow, error) {
@@ -1001,168 +813,130 @@ func (d *doltWorkflowManager) sqlWriteQuery(ctx *sql.Context, query string) erro
 	return err
 }
 
-func (d *doltWorkflowManager) getWorkflowInsertUpdates(workflow *Workflow) ([]string, error) {
-	if workflow.Name == nil {
-		return []string{}, ErrWorkflowNameIsNil
-	}
-	statements := make([]string, 0)
-	insertUpdateStatement := fmt.Sprintf("insert ignore into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, string(*workflow.Name))
-	statements = append(statements, insertUpdateStatement)
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowEventTriggerActivitiesInsertUpdates(triggerID WorkflowEventTriggerId, activities []*WorkflowEventTriggerActivity) ([]string, error) {
-	statements := make([]string, 0)
-	for _, activity := range activities {
-		id := string(*activity.Id)
-		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_triggers_id_fk`, `activity`) values ('%s', '%s', '%s') on duplicate key update `workflow_event_triggers_id_fk` = '%s', `activity` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, id, triggerID, activity.Activity, triggerID, activity.Activity)
-		statements = append(statements, insertUpdateStatement)
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowEventTriggerBranchesInsertUpdates(triggerID WorkflowEventTriggerId, branches []*WorkflowEventTriggerBranch) ([]string, error) {
-	statements := make([]string, 0)
-	for _, branch := range branches {
-		id := string(*branch.Id)
-		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_triggers_id_fk`, `branch`) values ('%s', '%s', '%s') on duplicate key update `workflow_event_triggers_id_fk` = '%s', `branch` = '%s';", doltdb.WorkflowEventTriggerBranchesTableName, id, triggerID, branch.Branch, triggerID, branch.Branch)
-		statements = append(statements, insertUpdateStatement)
-
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowEventTriggersInsertUpdates(eventID WorkflowEventId, triggers []*WorkflowEventTrigger) ([]string, error) {
-	statements := make([]string, 0)
-	for _, trigger := range triggers {
-		id := string(*trigger.Id)
-		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_id_fk`, `event_trigger_type`) values ('%s', '%s', %d) on duplicate key update `workflow_event_id_fk` = '%s', `event_trigger_type` = %d;", doltdb.WorkflowEventTriggersTableName, id, eventID, trigger.EventTriggerType, eventID, trigger.EventTriggerType)
-		statements = append(statements, insertUpdateStatement)
-
-		activityInsertUpdateStatements, err := d.getWorkflowEventTriggerActivitiesInsertUpdates(*trigger.Id, trigger.Activities)
-		if err != nil {
-			return nil, err
-		}
-		statements = append(statements, activityInsertUpdateStatements...)
-
-		branchesInsertUpdateStatements, err := d.getWorkflowEventTriggerBranchesInsertUpdates(*trigger.Id, trigger.Branches)
-		if err != nil {
-			return nil, err
-		}
-		statements = append(statements, branchesInsertUpdateStatements...)
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowEventInsertUpdates(workflowName string, events []*WorkflowEvent) ([]string, error) {
-	statements := make([]string, 0)
-
-	for _, event := range events {
-		id := string(*event.Id)
-		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_name_fk`, `event_type`) values ('%s', '%s', %d) on duplicate key update `workflow_name_fk` = '%s', `event_type` = %d;", doltdb.WorkflowEventsTableName, id, workflowName, event.EventType, workflowName, event.EventType)
-		statements = append(statements, insertUpdateStatement)
-
-		eventTriggerStatements, err := d.getWorkflowEventTriggersInsertUpdates(*event.Id, event.Triggers)
-		if err != nil {
-			return nil, err
-		}
-
-		statements = append(statements, eventTriggerStatements...)
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowSavedQueryStepExpectedRowColumnResultInsertUpdates(savedQueryStepID WorkflowSavedQueryStepId, result *WorkflowSavedQueryExpectedRowColumnResult) ([]string, error) {
-	statements := make([]string, 0)
-	insertUpdateStatement := fmt.Sprintf("insert into %s (`saved_query_step_id_fk`, `expected_row_count_comparison_type`, `expected_column_count_comparison_type`, `expected_row_count`, `expected_column_count`) values ('%s', %d, %d, %d, %d)", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, savedQueryStepID, result.ExpectedRowCountComparisonType, result.ExpectedColumnCountComparisonType, result.ExpectedRowCount, result.ExpectedColumnCount)
-	statements = append(statements, insertUpdateStatement)
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowStepSavedQueryStepInsertUpdates(stepID WorkflowStepId, savedQueryStep *WorkflowSavedQueryStep) ([]string, error) {
-	statements := make([]string, 0)
-	id := string(*savedQueryStep.Id)
-	insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `step_id_fk`, `saved_query_name`, `saved_query_expected_results_type`) values ('%s', '%s', '%s', %d) on duplicate key update `step_id_fk` = '%s', `saved_query_name` = '%s', `saved_query_expected_results_type` = %d;", doltdb.WorkflowSavedQueryStepsTableName, id, stepID, savedQueryStep.SavedQueryName, savedQueryStep.SavedQueryExpectedResultsType, stepID, savedQueryStep.SavedQueryName, savedQueryStep.SavedQueryExpectedResultsType)
-	statements = append(statements, insertUpdateStatement)
-	if savedQueryStep.ExpectedRowColumnResult != nil {
-		resultStatements, err := d.getWorkflowSavedQueryStepExpectedRowColumnResultInsertUpdates(*savedQueryStep.Id, savedQueryStep.ExpectedRowColumnResult)
-		if err != nil {
-			return nil, err
-		}
-		statements = append(statements, resultStatements...)
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowStepInsertUpdates(jobID WorkflowJobId, steps []*WorkflowStep) ([]string, error) {
-	statements := make([]string, 0)
-	for _, step := range steps {
-		id := string(*step.Id)
-		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `name`, `job_id_fk`, `step_order`, `step_type`, `created_at`, `updated_at`) values ('%s', '%s', '%s', %d, %d, now(), now()) on duplicate key update `name` = '%s', `job_id_fk` = '%s', `step_order` = %d, `step_type` = %d;", doltdb.WorkflowStepsTableName, id, step.Name, jobID, step.StepOrder, step.StepType, step.Name, jobID, step.StepOrder, step.StepType)
-		statements = append(statements, insertUpdateStatement)
-		if step.SavedQueryStep != nil {
-			savedQueryStepInsertUpdateStatement, err := d.getWorkflowStepSavedQueryStepInsertUpdates(*step.Id, step.SavedQueryStep)
-			if err != nil {
-				return nil, err
-			}
-			statements = append(statements, savedQueryStepInsertUpdateStatement...)
-		}
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getWorkflowJobInsertUpdates(workflowName string, jobs []*WorkflowJob) ([]string, error) {
-	statements := make([]string, 0)
-	for _, job := range jobs {
-		id := string(*job.Id)
-		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `name`, `workflow_name_fk`, `created_at`, `updated_at`) values ('%s', '%s', '%s', now(), now()) on duplicate key update `name` = '%s', `workflow_name_fk` = '%s', `updated_at` = now();", doltdb.WorkflowJobsTableName, id, job.Name, workflowName, job.Name, workflowName)
-		statements = append(statements, insertUpdateStatement)
-
-		stepInsertUpdateStatements, err := d.getWorkflowStepInsertUpdates(*job.Id, job.Steps)
-		if err != nil {
-			return nil, err
-		}
-		statements = append(statements, stepInsertUpdateStatements...)
-	}
-	return statements, nil
-}
-
-func (d *doltWorkflowManager) getInsertUpdateStatements(workflow *Workflow) ([]string, error) {
-	if workflow.Name == nil {
-		return nil, ErrWorkflowNameIsNil
-	}
-	statements := make([]string, 0)
-	workflowInsertUpdates, err := d.getWorkflowInsertUpdates(workflow)
-	if err != nil {
-		return nil, err
-	}
-	statements = append(statements, workflowInsertUpdates...)
-
-	eventInsertUpdates, err := d.getWorkflowEventInsertUpdates(string(*workflow.Name), workflow.Events)
-	if err != nil {
-		return nil, err
-	}
-	statements = append(statements, eventInsertUpdates...)
-
-	jobInsertUpdates, err := d.getWorkflowJobInsertUpdates(string(*workflow.Name), workflow.Jobs)
-	if err != nil {
-		return nil, err
-	}
-	statements = append(statements, jobInsertUpdates...)
-	return statements, nil
-}
-
-//func (d *doltWorkflowManager) StoreAndCommit(ctx *sql.Context, db sqle.Database, workflow *Workflow) error {
-//	if err := dsess.CheckAccessForDb(ctx, db, branch_control.Permissions_Write); err != nil {
-//		return err
+//func (d *doltWorkflowManager) getWorkflowInsertUpdates(workflow *Workflow) ([]string, error) {
+//	if workflow.Name == nil {
+//		return []string{}, ErrWorkflowNameIsNil
 //	}
-//
-//	err := d.writeWorkflow(ctx, workflow)
-//	if err != nil {
-//		return err
+//	statements := make([]string, 0)
+//	insertUpdateStatement := fmt.Sprintf("insert ignore into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, string(*workflow.Name))
+//	statements = append(statements, insertUpdateStatement)
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowEventTriggerActivitiesInsertUpdates(triggerID WorkflowEventTriggerId, activities []*WorkflowEventTriggerActivity) ([]string, error) {
+//	statements := make([]string, 0)
+//	for _, activity := range activities {
+//		id := string(*activity.Id)
+//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_triggers_id_fk`, `activity`) values ('%s', '%s', '%s') on duplicate key update `workflow_event_triggers_id_fk` = '%s', `activity` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, id, triggerID, activity.Activity, triggerID, activity.Activity)
+//		statements = append(statements, insertUpdateStatement)
 //	}
+//	return statements, nil
+//}
 //
-//	return d.commitWorkflow(ctx, workflow)
+//func (d *doltWorkflowManager) getWorkflowEventTriggerBranchesInsertUpdates(triggerID WorkflowEventTriggerId, branches []*WorkflowEventTriggerBranch) ([]string, error) {
+//	statements := make([]string, 0)
+//	for _, branch := range branches {
+//		id := string(*branch.Id)
+//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_triggers_id_fk`, `branch`) values ('%s', '%s', '%s') on duplicate key update `workflow_event_triggers_id_fk` = '%s', `branch` = '%s';", doltdb.WorkflowEventTriggerBranchesTableName, id, triggerID, branch.Branch, triggerID, branch.Branch)
+//		statements = append(statements, insertUpdateStatement)
+//
+//	}
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowEventTriggersInsertUpdates(eventID WorkflowEventId, triggers []*WorkflowEventTrigger) ([]string, error) {
+//	statements := make([]string, 0)
+//	for _, trigger := range triggers {
+//		id := string(*trigger.Id)
+//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_event_id_fk`, `event_trigger_type`) values ('%s', '%s', %d) on duplicate key update `workflow_event_id_fk` = '%s', `event_trigger_type` = %d;", doltdb.WorkflowEventTriggersTableName, id, eventID, trigger.EventTriggerType, eventID, trigger.EventTriggerType)
+//		statements = append(statements, insertUpdateStatement)
+//
+//		activityInsertUpdateStatements, err := d.getWorkflowEventTriggerActivitiesInsertUpdates(*trigger.Id, trigger.Activities)
+//		if err != nil {
+//			return nil, err
+//		}
+//		statements = append(statements, activityInsertUpdateStatements...)
+//
+//		branchesInsertUpdateStatements, err := d.getWorkflowEventTriggerBranchesInsertUpdates(*trigger.Id, trigger.Branches)
+//		if err != nil {
+//			return nil, err
+//		}
+//		statements = append(statements, branchesInsertUpdateStatements...)
+//	}
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowEventInsertUpdates(workflowName string, events []*WorkflowEvent) ([]string, error) {
+//	statements := make([]string, 0)
+//
+//	for _, event := range events {
+//		id := string(*event.Id)
+//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `workflow_name_fk`, `event_type`) values ('%s', '%s', %d) on duplicate key update `workflow_name_fk` = '%s', `event_type` = %d;", doltdb.WorkflowEventsTableName, id, workflowName, event.EventType, workflowName, event.EventType)
+//		statements = append(statements, insertUpdateStatement)
+//
+//		eventTriggerStatements, err := d.getWorkflowEventTriggersInsertUpdates(*event.Id, event.Triggers)
+//		if err != nil {
+//			return nil, err
+//		}
+//
+//		statements = append(statements, eventTriggerStatements...)
+//	}
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowSavedQueryStepExpectedRowColumnResultInsertUpdates(savedQueryStepID WorkflowSavedQueryStepId, result *WorkflowSavedQueryExpectedRowColumnResult) ([]string, error) {
+//	statements := make([]string, 0)
+//	insertUpdateStatement := fmt.Sprintf("insert into %s (`saved_query_step_id_fk`, `expected_row_count_comparison_type`, `expected_column_count_comparison_type`, `expected_row_count`, `expected_column_count`) values ('%s', %d, %d, %d, %d)", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, savedQueryStepID, result.ExpectedRowCountComparisonType, result.ExpectedColumnCountComparisonType, result.ExpectedRowCount, result.ExpectedColumnCount)
+//	statements = append(statements, insertUpdateStatement)
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowStepSavedQueryStepInsertUpdates(stepID WorkflowStepId, savedQueryStep *WorkflowSavedQueryStep) ([]string, error) {
+//	statements := make([]string, 0)
+//	id := string(*savedQueryStep.Id)
+//	insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `step_id_fk`, `saved_query_name`, `saved_query_expected_results_type`) values ('%s', '%s', '%s', %d) on duplicate key update `step_id_fk` = '%s', `saved_query_name` = '%s', `saved_query_expected_results_type` = %d;", doltdb.WorkflowSavedQueryStepsTableName, id, stepID, savedQueryStep.SavedQueryName, savedQueryStep.SavedQueryExpectedResultsType, stepID, savedQueryStep.SavedQueryName, savedQueryStep.SavedQueryExpectedResultsType)
+//	statements = append(statements, insertUpdateStatement)
+//	if savedQueryStep.ExpectedRowColumnResult != nil {
+//		resultStatements, err := d.getWorkflowSavedQueryStepExpectedRowColumnResultInsertUpdates(*savedQueryStep.Id, savedQueryStep.ExpectedRowColumnResult)
+//		if err != nil {
+//			return nil, err
+//		}
+//		statements = append(statements, resultStatements...)
+//	}
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowStepInsertUpdates(jobID WorkflowJobId, steps []*WorkflowStep) ([]string, error) {
+//	statements := make([]string, 0)
+//	for _, step := range steps {
+//		id := string(*step.Id)
+//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `name`, `job_id_fk`, `step_order`, `step_type`, `created_at`, `updated_at`) values ('%s', '%s', '%s', %d, %d, now(), now()) on duplicate key update `name` = '%s', `job_id_fk` = '%s', `step_order` = %d, `step_type` = %d;", doltdb.WorkflowStepsTableName, id, step.Name, jobID, step.StepOrder, step.StepType, step.Name, jobID, step.StepOrder, step.StepType)
+//		statements = append(statements, insertUpdateStatement)
+//		if step.SavedQueryStep != nil {
+//			savedQueryStepInsertUpdateStatement, err := d.getWorkflowStepSavedQueryStepInsertUpdates(*step.Id, step.SavedQueryStep)
+//			if err != nil {
+//				return nil, err
+//			}
+//			statements = append(statements, savedQueryStepInsertUpdateStatement...)
+//		}
+//	}
+//	return statements, nil
+//}
+
+//func (d *doltWorkflowManager) getWorkflowJobInsertUpdates(workflowName string, jobs []*WorkflowJob) ([]string, error) {
+//	statements := make([]string, 0)
+//	for _, job := range jobs {
+//		id := string(*job.Id)
+//		insertUpdateStatement := fmt.Sprintf("insert into %s (`id`, `name`, `workflow_name_fk`, `created_at`, `updated_at`) values ('%s', '%s', '%s', now(), now()) on duplicate key update `name` = '%s', `workflow_name_fk` = '%s', `updated_at` = now();", doltdb.WorkflowJobsTableName, id, job.Name, workflowName, job.Name, workflowName)
+//		statements = append(statements, insertUpdateStatement)
+//
+//		stepInsertUpdateStatements, err := d.getWorkflowStepInsertUpdates(*job.Id, job.Steps)
+//		if err != nil {
+//			return nil, err
+//		}
+//		statements = append(statements, stepInsertUpdateStatements...)
+//	}
+//	return statements, nil
 //}
 
 func (d *doltWorkflowManager) StoreAndCommit(ctx *sql.Context, db sqle.Database, config *WorkflowConfig) error {

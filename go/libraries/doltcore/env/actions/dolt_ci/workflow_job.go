@@ -26,12 +26,4 @@ type WorkflowJob struct {
 	WorkflowNameFK *WorkflowName  `db:"workflow_name_fk"`
 	CreatedAt      time.Time      `db:"created_at"`
 	UpdateAt       time.Time      `db:"updated_at"`
-	Steps          []*WorkflowStep
-}
-
-func (w *WorkflowJob) GetSteps() []*WorkflowStep {
-	if w.Steps != nil {
-		return w.Steps
-	}
-	return []*WorkflowStep{}
 }

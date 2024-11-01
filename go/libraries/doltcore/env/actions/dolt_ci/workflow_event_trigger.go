@@ -35,22 +35,6 @@ type WorkflowEventTrigger struct {
 	Id                *WorkflowEventTriggerId  `db:"id"`
 	WorkflowEventIdFK *WorkflowEventId         `db:"workflow_event_id_fk"`
 	EventTriggerType  WorkflowEventTriggerType `db:"event_trigger_type"`
-	Activities        []*WorkflowEventTriggerActivity
-	Branches          []*WorkflowEventTriggerBranch
-}
-
-func (w *WorkflowEventTrigger) GetEventTriggerActivities() []*WorkflowEventTriggerActivity {
-	if w.Activities != nil {
-		return w.Activities
-	}
-	return []*WorkflowEventTriggerActivity{}
-}
-
-func (w *WorkflowEventTrigger) GetEventTriggerBranches() []*WorkflowEventTriggerBranch {
-	if w.Branches != nil {
-		return w.Branches
-	}
-	return []*WorkflowEventTriggerBranch{}
 }
 
 func toWorkflowEventTriggerType(t int) (WorkflowEventTriggerType, error) {
