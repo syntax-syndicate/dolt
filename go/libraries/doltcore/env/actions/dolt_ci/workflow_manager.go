@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dolthub/go-mysql-server/sql"
@@ -560,8 +561,8 @@ func (d *doltWorkflowManager) validateWorkflowTables(ctx *sql.Context) error {
 	return nil
 }
 
-func (d *doltWorkflowManager) commitWorkflow(ctx *sql.Context, workflow *Workflow) error {
-	return d.sqlWriteQuery(ctx, fmt.Sprintf("CALL DOLT_COMMIT('-Am' 'Successfully stored workflow: %s', '--author', '%s <%s>');", string(*workflow.Name), d.commiterName, d.commiterEmail))
+func (d *doltWorkflowManager) commitWorkflow(ctx *sql.Context, workflowName string) error {
+	return d.sqlWriteQuery(ctx, fmt.Sprintf("CALL DOLT_COMMIT('-Am' 'Successfully stored workflow: %s', '--author', '%s <%s>');", workflowName, d.commiterName, d.commiterEmail))
 }
 
 func (d *doltWorkflowManager) sqlWriteQuery(ctx *sql.Context, query string) error {
@@ -867,26 +868,295 @@ func (d *doltWorkflowManager) getWorkflow(ctx *sql.Context, workflowName string)
 	return workflows[0], nil
 }
 
-func (d *doltWorkflowManager) storeFromConfig(ctx *sql.Context, config *WorkflowConfig) (*Workflow, error) {
-	// todo: run query to see if workflow in table exists
-	// if not, create it
+func (d *doltWorkflowManager) updateExistingWorkflow(ctx *sql.Context, config *WorkflowConfig) error {
+	return nil
+}
 
-	// todo: fetch all events associated with workflow
-	/// make state of db match the config
+func (d *doltWorkflowManager) writeWorkflowRow(ctx *sql.Context, workflowName WorkflowName) (WorkflowName, error) {
+	wn, query := d.insertIntoWorkflowsTableQuery(string(workflowName))
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowName(wn), nil
+}
 
-	//statements, err := d.getInsertUpdateStatements(workflow)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//for _, statement := range statements {
-	//	err = d.sqlWriteQuery(ctx, statement)
-	//	if err != nil {
-	//		return err
-	//	}
-	//}
+func (d *doltWorkflowManager) writeWorkflowEventRow(ctx *sql.Context, workflowName WorkflowName, eventType WorkflowEventType) (WorkflowEventId, error) {
+	eventID, query := d.insertIntoWorkflowEventsTableQuery(string(workflowName), int(eventType))
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowEventId(eventID), nil
+}
 
-	return nil, nil
+func (d *doltWorkflowManager) writeWorkflowEventTriggerRow(ctx *sql.Context, eventID WorkflowEventId, triggerType WorkflowEventTriggerType) (WorkflowEventTriggerId, error) {
+	triggerID, query := d.insertIntoWorkflowEventTriggersTableQuery(string(eventID), int(triggerType))
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowEventTriggerId(triggerID), nil
+}
+
+func (d *doltWorkflowManager) writeWorkflowEventTriggerBranchesRow(ctx *sql.Context, triggerID WorkflowEventTriggerId, branch string) (WorkflowEventTriggerBranchId, error) {
+	branchID, query := d.insertIntoWorkflowEventTriggerBranchesTableQuery(string(triggerID), branch)
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowEventTriggerBranchId(branchID), nil
+}
+
+func (d *doltWorkflowManager) writeWorkflowEventTriggerActivitiesRow(ctx *sql.Context, triggerID WorkflowEventTriggerId, activity string) (WorkflowEventTriggerActivityId, error) {
+	activityID, query := d.insertIntoWorkflowEventTriggerBranchesTableQuery(string(triggerID), activity)
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowEventTriggerActivityId(activityID), nil
+}
+
+func (d *doltWorkflowManager) writeWorkflowJobRow(ctx *sql.Context, workflowName WorkflowName, jobName string) (WorkflowJobId, error) {
+	jobID, query := d.insertIntoWorkflowJobsTableQuery(jobName, string(workflowName))
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowJobId(jobID), nil
+}
+
+func (d *doltWorkflowManager) writeWorkflowStepRow(ctx *sql.Context, jobID WorkflowJobId, stepName string, stepOrder int, stepType WorkflowStepType) (WorkflowStepId, error) {
+	stepID, query := d.insertIntoWorkflowStepsTableQuery(stepName, string(jobID), stepOrder, int(stepType))
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowStepId(stepID), nil
+}
+
+func (d *doltWorkflowManager) writeWorkflowSavedQueryStepRow(ctx *sql.Context, stepID WorkflowStepId, savedQueryName string, expectedResultType WorkflowSavedQueryExpectedResultsType) (WorkflowSavedQueryStepId, error) {
+	savedQueryStepID, query := d.insertIntoWorkflowSavedQueryStepsTableQuery(savedQueryName, string(stepID), int(expectedResultType))
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowSavedQueryStepId(savedQueryStepID), nil
+}
+
+func (d *doltWorkflowManager) writeWorkflowSavedQueryStepExpectedRowColumnResultRow(ctx *sql.Context, savedQueryStepID WorkflowSavedQueryStepId, expectedColumnComparisonType, expectedRowComparisonType WorkflowSavedQueryExpectedRowColumnComparisonType, expectedColumnCount, expectedRowCount int64) (WorkflowSavedQueryExpectedRowColumnResultId, error) {
+	resultID, query := d.insertIntoWorkflowSavedQueryStepExpectedRowColumnResultsTableQuery(string(savedQueryStepID), int(expectedColumnComparisonType), int(expectedRowComparisonType), expectedColumnCount, expectedRowCount)
+	err := d.sqlWriteQuery(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	return WorkflowSavedQueryExpectedRowColumnResultId(resultID), nil
+}
+
+func (d *doltWorkflowManager) parseSavedQueryExpectedResultString(str string) (WorkflowSavedQueryExpectedRowColumnComparisonType, int64, error) {
+	parts := strings.Split(strings.TrimSpace(str), " ")
+	if len(parts) == 1 {
+		i, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+		return WorkflowSavedQueryExpectedRowColumnComparisonTypeEquals, i, nil
+	}
+	if len(parts) == 2 {
+		i, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+		switch strings.TrimSpace(parts[0]) {
+		case "==":
+			return WorkflowSavedQueryExpectedRowColumnComparisonTypeEquals, i, nil
+		case "!=":
+			return WorkflowSavedQueryExpectedRowColumnComparisonTypeNotEquals, i, nil
+		case ">":
+			return WorkflowSavedQueryExpectedRowColumnComparisonTypeGreaterThan, i, nil
+		case ">=":
+			return WorkflowSavedQueryExpectedRowColumnComparisonTypeGreaterThanOrEqual, i, nil
+		case "<":
+			return WorkflowSavedQueryExpectedRowColumnComparisonTypeLessThan, i, nil
+		case "<=":
+			return WorkflowSavedQueryExpectedRowColumnComparisonTypeLessThanOrEqual, i, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("unable to parse comparison string: %s", str)
+}
+
+func (d *doltWorkflowManager) createWorkflow(ctx *sql.Context, config *WorkflowConfig) error {
+	workflowName, err := d.writeWorkflowRow(ctx, WorkflowName(config.Name))
+	if err != nil {
+		return err
+	}
+
+	// insert into events
+	// handle on push
+	var pushEventID WorkflowEventId
+	if config.On.Push != nil {
+		pushEventID, err = d.writeWorkflowEventRow(ctx, workflowName, WorkflowEventTypePush)
+		if err != nil {
+			return err
+		}
+	}
+
+	// handle on pull request
+	var pullRequestEventID WorkflowEventId
+	if config.On.PullRequest != nil {
+		pullRequestEventID, err = d.writeWorkflowEventRow(ctx, workflowName, WorkflowEventTypePullRequest)
+		if err != nil {
+			return err
+		}
+	}
+
+	// handle on workflow dispatch
+	var workflowDispatchEventID WorkflowEventId
+	if config.On.WorkflowDispatch != nil {
+		workflowDispatchEventID, err = d.writeWorkflowEventRow(ctx, workflowName, WorkflowEventTypeWorkflowDispatch)
+		if err != nil {
+			return err
+		}
+	}
+
+	// insert into triggers
+	// handle push
+	var pushBranchesTriggerEventID WorkflowEventTriggerId
+	if pushEventID != "" {
+		if len(config.On.Push.Branches) == 0 {
+			// dont insert trigger rows for generic push events
+		} else {
+			pushBranchesTriggerEventID, err = d.writeWorkflowEventTriggerRow(ctx, pushEventID, WorkflowEventTriggerTypeBranches)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// handle pull request
+	var pullRequestBranchesTriggerEventID WorkflowEventTriggerId
+	var pullRequestActivitiesTriggerEventID WorkflowEventTriggerId
+	if pullRequestEventID != "" {
+		if len(config.On.PullRequest.Branches) == 0 && len(config.On.PullRequest.Activities) == 0 {
+			// dont insert trigger rows for generic pull request events
+		} else {
+			if len(config.On.PullRequest.Branches) > 0 {
+				pullRequestBranchesTriggerEventID, err = d.writeWorkflowEventTriggerRow(ctx, pullRequestEventID, WorkflowEventTriggerTypeBranches)
+				if err != nil {
+					return err
+				}
+			}
+			if len(config.On.PullRequest.Activities) > 0 {
+				pullRequestActivitiesTriggerEventID, err = d.writeWorkflowEventTriggerRow(ctx, pullRequestEventID, WorkflowEventTriggerTypeActivities)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// handle workflow dispatch
+	if workflowDispatchEventID != "" {
+		if config.On.WorkflowDispatch != nil {
+			_, err = d.writeWorkflowEventTriggerRow(ctx, workflowDispatchEventID, WorkflowEventTriggerTypeWorkflowDispatch)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// insert into trigger branches
+	// handle pushes
+	if pushBranchesTriggerEventID != "" {
+		for _, branch := range config.On.Push.Branches {
+			_, err = d.writeWorkflowEventTriggerBranchesRow(ctx, pushBranchesTriggerEventID, branch)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// handle pull requests
+	if pullRequestBranchesTriggerEventID != "" {
+		for _, branch := range config.On.PullRequest.Branches {
+			_, err = d.writeWorkflowEventTriggerBranchesRow(ctx, pullRequestBranchesTriggerEventID, branch)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// insert into trigger activities
+	// handle pull requests
+	if pullRequestActivitiesTriggerEventID != "" {
+		for _, activity := range config.On.PullRequest.Activities {
+			_, err = d.writeWorkflowEventTriggerActivitiesRow(ctx, pullRequestActivitiesTriggerEventID, activity)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// handle jobs
+	for _, job := range config.Jobs {
+		// insert into jobs
+		jobID, err := d.writeWorkflowJobRow(ctx, workflowName, job.Name)
+		if err != nil {
+			return err
+		}
+
+		// handle steps
+		for idx, step := range job.Steps {
+			// insert into step
+			order := idx + 1
+
+			var stepType WorkflowStepType
+			if step.SavedQueryName != "" {
+				stepType = WorkflowStepTypeSavedQuery
+			}
+
+			stepID, err := d.writeWorkflowStepRow(ctx, jobID, step.Name, order, stepType)
+			if err != nil {
+				return err
+			}
+
+			// insert into saved query steps
+			if stepType == WorkflowStepTypeSavedQuery {
+				savedQueryStepID, err := d.writeWorkflowSavedQueryStepRow(ctx, stepID, step.SavedQueryName, WorkflowSavedQueryExpectedResultsTypeRowColumnCount)
+				if err != nil {
+					return err
+				}
+
+				// insert into expected results
+				expectedColumnComparisonType, expectedColumnCount, err := d.parseSavedQueryExpectedResultString(step.ExpectedColumns)
+				if err != nil {
+					return err
+				}
+
+				expectedRowComparisonType, expectedRowCount, err := d.parseSavedQueryExpectedResultString(step.ExpectedRows)
+				if err != nil {
+					return err
+				}
+
+				_, err = d.writeWorkflowSavedQueryStepExpectedRowColumnResultRow(ctx, savedQueryStepID, expectedColumnComparisonType, expectedRowComparisonType, expectedColumnCount, expectedRowCount)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (d *doltWorkflowManager) storeFromConfig(ctx *sql.Context, config *WorkflowConfig) error {
+	_, err := d.getWorkflow(ctx, config.Name)
+	if err != nil {
+		if err == ErrWorkflowNotFound {
+			return d.createWorkflow(ctx, config)
+		}
+		return err
+	}
+	return d.updateExistingWorkflow(ctx, config)
 }
 
 func (d *doltWorkflowManager) StoreAndCommit(ctx *sql.Context, db sqle.Database, config *WorkflowConfig) error {
@@ -894,10 +1164,10 @@ func (d *doltWorkflowManager) StoreAndCommit(ctx *sql.Context, db sqle.Database,
 		return err
 	}
 
-	workflow, err := d.storeFromConfig(ctx, config)
+	err := d.storeFromConfig(ctx, config)
 	if err != nil {
 		return err
 	}
 
-	return d.commitWorkflow(ctx, workflow)
+	return d.commitWorkflow(ctx, config.Name)
 }
