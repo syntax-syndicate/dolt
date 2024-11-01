@@ -869,6 +869,51 @@ func (d *doltWorkflowManager) getWorkflow(ctx *sql.Context, workflowName string)
 }
 
 func (d *doltWorkflowManager) updateExistingWorkflow(ctx *sql.Context, config *WorkflowConfig) error {
+	// todo: update events to match config
+	// handle deletes
+	if config.On.Push == nil {
+		// todo: delete all push events for this workflow
+	}
+	if config.On.PullRequest == nil {
+		// todo: delete all pull request events for this workflow
+	}
+	if config.On.WorkflowDispatch == nil {
+		// todo: delete all workflow dispatch events for this workflow
+	}
+
+	// handle push
+	if config.On.Push != nil {
+		if len(config.On.Push.Branches) == 0 {
+			// todo: delete all push events and triggers and trigger branches for this workflow
+		} else {
+			// todo: create a map of config branches
+			// todo: list all trigger branches for this workflow push event
+			// todo: iterate all branches
+			// todo: for each branch, check config map
+			// todo: if not in config map, delete branch in db
+			// todo: if is in config map, delete from config map
+			// todo: after loop, if any branches are left in the config map
+			// todo: create those trigger branches
+		}
+	}
+	
+	if config.On.PullRequest != nil {
+		if len(config.On.PullRequest.Branches) == 0 {
+			// todo: delete all pull request events and triggers and branches for this workflow
+		}
+		if len(config.On.PullRequest.Activities) == 0 {
+			// todo: delete all pull request events and triggers and activities for this workflow
+		}
+	}
+
+	// todo: update triggers to match config
+	// todo: update t branches to match config
+	// todo: update t activities to match config
+
+	// todo: update jobs to match config
+	// todo: update steps to match config
+	// todo: update sqs to match config
+	// todo: update results to match config
 	return nil
 }
 
