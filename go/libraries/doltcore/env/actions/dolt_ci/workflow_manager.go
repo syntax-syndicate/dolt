@@ -17,14 +17,16 @@ package dolt_ci
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/dolthub/go-mysql-server/sql"
+	"github.com/google/uuid"
+
 	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
-	"github.com/dolthub/go-mysql-server/sql"
-	"github.com/google/uuid"
-	"strconv"
-	"time"
 )
 
 const (
@@ -69,6 +71,8 @@ func NewWorkflowManager(commiterName, commiterEmail string, queryFunc QueryFunc)
 	}
 }
 
+// selects
+
 func (d *doltWorkflowManager) selectAllFromWorkflowsTableQuery() string {
 	return fmt.Sprintf("select * from %s;", doltdb.WorkflowsTableName)
 }
@@ -109,9 +113,6 @@ func (d *doltWorkflowManager) selectAllFromWorkflowEventTriggerActivitiesTableBy
 	return fmt.Sprintf("select * from %s where `%s` = '%s';", doltdb.WorkflowEventTriggerActivitiesTableName, doltdb.WorkflowEventTriggerActivitiesWorkflowEventTriggersIdFkColName, triggerID)
 }
 
-// todo: add select by ids for each thing
-
-// todo: add inserts for each thing
 func (d *doltWorkflowManager) insertIntoWorkflowsTableQuery(workflowName string) (string, string) {
 	return workflowName, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`) values ('%s', now(), now());", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, doltdb.WorkflowsCreatedAtColName, doltdb.WorkflowsUpdatedAtColName, workflowName)
 }
@@ -152,14 +153,32 @@ func (d *doltWorkflowManager) insertIntoWorkflowSavedQueryStepsTableQuery(savedQ
 }
 
 func (d *doltWorkflowManager) insertIntoWorkflowSavedQueryStepExpectedRowColumnResultsTableQuery(savedQueryStepID string, expectedColumnComparisonType, expectedRowComparisonType int, expectedColumnCount, expectedRowCount int64) (string, string) {
-	return savedQueryStepID, fmt.Sprintf("insert into %s (`saved_query_step_id_fk`, `expected_column_count_comparison_type`,`expected_row_count_comparison_type`, `expected_column_count`, `expected_row_count`) values ('%s', %d, %d, %d, %d);", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountComparisonTypeColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName, savedQueryStepID, expectedColumnComparisonType, expectedRowComparisonType, expectedColumnCount, expectedRowCount)
+	expectedResultID := uuid.NewString()
+	return expectedResultID, fmt.Sprintf("insert into %s (`%s`, `%s`, `%s`,`%s`, `%s`, `%s`, `%s`, `%s`) values ('%s', '%s', %d, %d, %d, %d, now(), now());", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsIdPkColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountComparisonTypeColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsCreatedAtColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtColName, expectedResultID, savedQueryStepID, expectedColumnComparisonType, expectedRowComparisonType, expectedColumnCount, expectedRowCount)
 }
 
-// todo: add sql for update to each thing??
+// updates
 
-// todo: add sql for delete from each thing
+func (d *doltWorkflowManager) updateWorkflowJobsTableQuery(jobID, jobName string) string {
+	return fmt.Sprintf("update %s set `%s` = '%s', `%s` = now(), where `%s` = '%s';", doltdb.WorkflowJobsTableName, doltdb.WorkflowJobsNameColName, jobName, doltdb.WorkflowJobsUpdatedAtColName, doltdb.WorkflowJobsIdPkColName, jobID)
+}
+
+func (d *doltWorkflowManager) updateWorkflowStepsTableQuery(stepID, stepName string) string {
+	return fmt.Sprintf("update %s set `%s` = '%s', `%s` = now(), where `%s` = '%s';", doltdb.WorkflowStepsTableName, doltdb.WorkflowStepsNameColName, stepName, doltdb.WorkflowStepsUpdatedAtColName, doltdb.WorkflowStepsIdPkColName, stepID)
+}
+
+func (d *doltWorkflowManager) updateWorkflowSavedQueryStepsExpectedRowColumnResultsTableQuery(expectedResultID, expectedColumnComparisonType, expectedRowComparisonType int, expectedColumnCount, expectedRowCount int64) string {
+	return fmt.Sprintf("update %s set `%s` = '%d', `%s` = '%d', `%s` = '%d', `%s` = '%d', `%s` = now(), where `%s` = '%s';", doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsTableName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeColName, expectedColumnComparisonType, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountComparisonTypeColName, expectedRowComparisonType, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountColName, expectedColumnCount, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName, expectedRowCount, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtColName, doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsIdPkColName, expectedResultID)
+}
+
+// deletes
+
 func (d *doltWorkflowManager) deleteFromWorkflowsTableByWorkflowNameQuery(workflowName string) string {
 	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowsTableName, doltdb.WorkflowsNameColName, workflowName)
+}
+
+func (d *doltWorkflowManager) deleteFromWorkflowEventsTableByWorkflowNameQuery(workflowName string) string {
+	return fmt.Sprintf("delete from %s where `%s` = '%s';", doltdb.WorkflowEventsTableName, doltdb.WorkflowEventsWorkflowNameFkColName, workflowName)
 }
 
 func (d *doltWorkflowManager) deleteFromWorkflowEventsTableByWorkflowEventIdQuery(eventId string) string {
@@ -289,6 +308,9 @@ func (d *doltWorkflowManager) newWorkflowSavedQueryStepExpectedRowColumnResult(c
 
 	for _, cv := range cvs {
 		switch cv.ColumnName {
+		case doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsIdPkColName:
+			id := WorkflowSavedQueryExpectedRowColumnResultId(cv.Value)
+			r.Id = &id
 		case doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName:
 			id := WorkflowSavedQueryStepId(cv.Value)
 			r.WorkflowSavedQueryStepIdFK = &id
@@ -323,8 +345,19 @@ func (d *doltWorkflowManager) newWorkflowSavedQueryStepExpectedRowColumnResult(c
 			if err != nil {
 				return nil, err
 			}
-
 			r.ExpectedColumnCount = int64(i)
+		case doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsCreatedAtColName:
+			t, err := time.Parse(doltCITimeFormat, cv.Value)
+			if err != nil {
+				return nil, err
+			}
+			r.CreatedAt = t
+		case doltdb.WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtColName:
+			t, err := time.Parse(doltCITimeFormat, cv.Value)
+			if err != nil {
+				return nil, err
+			}
+			r.UpdateAt = t
 		default:
 			return nil, errors.New(fmt.Sprintf("unknown saved query expected row column results column: %s", cv.ColumnName))
 		}
@@ -525,6 +558,19 @@ func (d *doltWorkflowManager) validateWorkflowTables(ctx *sql.Context) error {
 	}
 
 	return nil
+}
+
+func (d *doltWorkflowManager) commitWorkflow(ctx *sql.Context, workflow *Workflow) error {
+	return d.sqlWriteQuery(ctx, fmt.Sprintf("CALL DOLT_COMMIT('-Am' 'Successfully stored workflow: %s', '--author', '%s <%s>');", string(*workflow.Name), d.commiterName, d.commiterEmail))
+}
+
+func (d *doltWorkflowManager) sqlWriteQuery(ctx *sql.Context, query string) error {
+	_, rowIter, _, err := d.queryFunc(ctx, query)
+	if err != nil {
+		return err
+	}
+	_, err = sql.RowIterToRows(ctx, rowIter)
+	return err
 }
 
 func (d *doltWorkflowManager) sqlReadQuery(ctx *sql.Context, query string, cb func(ctx *sql.Context, cvs ColumnValues) error) error {
@@ -841,21 +887,6 @@ func (d *doltWorkflowManager) storeFromConfig(ctx *sql.Context, config *Workflow
 	//}
 
 	return nil, nil
-}
-
-func (d *doltWorkflowManager) commitWorkflow(ctx *sql.Context, workflow *Workflow) error {
-	return d.sqlWriteQuery(ctx, fmt.Sprintf("CALL DOLT_COMMIT('-Am' 'Successfully stored workflow: %s', '--author', '%s <%s>');", string(*workflow.Name), d.commiterName, d.commiterEmail))
-}
-
-// TODO: fix all the insert templates!!!
-
-func (d *doltWorkflowManager) sqlWriteQuery(ctx *sql.Context, query string) error {
-	_, rowIter, _, err := d.queryFunc(ctx, query)
-	if err != nil {
-		return err
-	}
-	_, err = sql.RowIterToRows(ctx, rowIter)
-	return err
 }
 
 func (d *doltWorkflowManager) StoreAndCommit(ctx *sql.Context, db sqle.Database, config *WorkflowConfig) error {

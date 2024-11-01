@@ -464,6 +464,9 @@ const (
 	// WorkflowSavedQueryStepExpectedRowColumnResultsTableName is the name of the saved query step expected row column results table name
 	WorkflowSavedQueryStepExpectedRowColumnResultsTableName = "dolt_ci_workflow_saved_query_step_expected_row_column_results"
 
+	// WorkflowSavedQueryStepExpectedRowColumnResultsIdPkColName is the name of the id column on the workflow saved query step expected row column results table
+	WorkflowSavedQueryStepExpectedRowColumnResultsIdPkColName = "id"
+
 	// WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName is the name of the workflow saved query step id foreign key column on the workflow saved query step expected row column results table
 	WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkColName = "workflow_saved_query_step_id_fk"
 
@@ -478,6 +481,12 @@ const (
 
 	// WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName is the name of the expected row count column on the workflow saved query step expected row column results table
 	WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountColName = "expected_row_count"
+
+	// WorkflowSavedQueryStepExpectedRowColumnResultsCreatedAtColName is the name of the created at column on the workflow saved query step expected row column results table
+	WorkflowSavedQueryStepExpectedRowColumnResultsCreatedAtColName = "created_at"
+
+	// WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtColName is the name of the updated at column on the workflow saved query step expected row column results table
+	WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtColName = "updated_at"
 )
 
 const (

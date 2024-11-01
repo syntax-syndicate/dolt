@@ -16,6 +16,7 @@ package dolt_ci
 
 import (
 	"errors"
+	"time"
 )
 
 var ErrUnknownWorkflowSavedQueryExpectedRowColumnComparisonType = errors.New("unknown workflow saved query expected row column comparison type")
@@ -32,12 +33,17 @@ const (
 	WorkflowSavedQueryExpectedRowColumnComparisonTypeGreaterThanOrEqual
 )
 
+type WorkflowSavedQueryExpectedRowColumnResultId string
+
 type WorkflowSavedQueryExpectedRowColumnResult struct {
+	Id                                *WorkflowSavedQueryExpectedRowColumnResultId      `db:"id"`
 	WorkflowSavedQueryStepIdFK        *WorkflowSavedQueryStepId                         `db:"saved_query_step_id_fk"`
 	ExpectedRowCountComparisonType    WorkflowSavedQueryExpectedRowColumnComparisonType `db:"expected_row_comparison_type"`
 	ExpectedColumnCountComparisonType WorkflowSavedQueryExpectedRowColumnComparisonType `db:"expected_column_comparison_type"`
 	ExpectedRowCount                  int64                                             `db:"expected_row_count"`
 	ExpectedColumnCount               int64                                             `db:"expected_column_count"`
+	CreatedAt                         time.Time                                         `db:"created_at"`
+	UpdateAt                          time.Time                                         `db:"updated_at"`
 }
 
 func toWorkflowSavedQueryExpectedRowColumnComparisonResultType(t int) (WorkflowSavedQueryExpectedRowColumnComparisonType, error) {

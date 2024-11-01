@@ -131,7 +131,7 @@ func (cmd ImportCmd) Exec(ctx context.Context, commandStr string, args []string,
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}
 
-	err = wr.StoreFromConfigAndCommit(sqlCtx, db, workflowConfig)
+	err = wr.StoreAndCommit(sqlCtx, db, workflowConfig)
 	if err != nil {
 		return commands.HandleVErrAndExitCode(errhand.VerboseErrorFromError(err), usage)
 	}

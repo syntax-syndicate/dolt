@@ -211,7 +211,10 @@ const (
 	// WorkflowSavedQueryStepsExpectedResultsTypeTag is the name of the tag on the expected results type column on the workflow saved queyr steps table
 	WorkflowSavedQueryStepsExpectedResultsTypeTag
 
-	// WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkTag is the name of the tag on the workflow saved query step id foreign key column on the workflow saved query step expected row column results table
+	// WorkflowSavedQueryStepExpectedRowColumnResultsIdPkTag is the name of the tag of the id column on the workflow saved query step expected row column results table
+	WorkflowSavedQueryStepExpectedRowColumnResultsIdPkTag
+
+	// WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkTag is the name of the tag of the workflow saved query step id foreign key column on the workflow saved query step expected row column results table
 	WorkflowSavedQueryStepExpectedRowColumnResultsSavedQueryStepIdFkTag
 
 	// WorkflowSavedQueryStepExpectedRowColumnResultsExpectedColumnCountComparisonTypeTag is the name of the tag on the expected column count comparison type column on the workflow saved query step expected row column results table
@@ -225,4 +228,10 @@ const (
 
 	// WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountTag is the name of the tag on the expected row count column on the workflow saved query step expected row column results table
 	WorkflowSavedQueryStepExpectedRowColumnResultsExpectedRowCountTag
+
+	// WorkflowSavedQueryStepExpectedRowColumnResultsCreatedAtTag is the name of the tag on the created at column on the workflow saved query step expected row column results table
+	WorkflowSavedQueryStepExpectedRowColumnResultsCreatedAtTag
+
+	// WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtTag is the name of the tag on the updated at column on the workflow saved query step expected row column results table
+	WorkflowSavedQueryStepExpectedRowColumnResultsUpdatedAtTag
 )
