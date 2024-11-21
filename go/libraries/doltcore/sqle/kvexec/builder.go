@@ -49,60 +49,140 @@ func (b Builder) Build(ctx *sql.Context, n sql.Node, r sql.Row) (sql.RowIter, er
 
 	switch n := n.(type) {
 	case *plan.JoinNode:
-		if n.Op.IsLookup() && !n.Op.IsPartial() {
-			if ita, ok := getIta(n.Right()); ok && len(r) == 0 && simpleLookupExpressions(ita.Expressions()) {
-				if _, _, _, dstIter, _, _, dstTags, dstFilter, err := getSourceKv(ctx, n.Right(), false); err == nil && dstIter != nil {
-					if srcMap, _, srcIter, _, srcSchema, _, srcTags, srcFilter, err := getSourceKv(ctx, n.Left(), true); err == nil && srcSchema != nil {
-						if keyLookupMapper := newLookupKeyMapping(ctx, srcSchema, dstIter.InputKeyDesc(), ita.Expressions(), srcMap.NodeStore()); keyLookupMapper.valid() {
-							// conditions:
-							// (1) lookup or left lookup join
-							// (2) left-side is something we read KVs from (table or indexscan, ex: no subqueries)
-							// (3) right-side is an index lookup, by definition
-							// (4) the key expressions for the lookup are literals or columns (ex: no arithmetic yet)
-							split := len(srcTags)
-							projections := append(srcTags, dstTags...)
-							rowJoiner := newRowJoiner([]schema.Schema{srcSchema, dstIter.Schema()}, []int{split}, projections, dstIter.NodeStore())
-							return newLookupKvIter(srcIter, dstIter, keyLookupMapper, rowJoiner, srcFilter, dstFilter, n.Filter, n.Op.IsLeftOuter(), n.Op.IsExcludeNulls())
-						}
-					}
-				}
+		switch {
+		case n.Op.IsPartial() || len(r) != 0:
+			return nil, nil
+		case n.Op.IsLookup():
+			right := n.Right()
+			ita, hasIta := getIta(right)
+			if !hasIta {
+				return nil, nil
 			}
-		}
-		if n.Op.IsMerge() && !n.Op.IsPartial() && len(r) == 0 {
-			if leftMap, leftIter, lPriSch, lSecSch, leftTags, leftFilter, leftNorm, err := getMergeKv(ctx, n.Left()); err == nil {
-				if rightMap, rightIter, rPriSch, rSecSch, rightTags, rightFilter, rightNorm, err := getMergeKv(ctx, n.Right()); err == nil {
-					filters := expression.SplitConjunction(n.Filter)
-					projections := append(leftTags, rightTags...)
-					// - secondary indexes are source of comparison columns.
-					// - usually key tuple, but for keyless tables it's val tuple.
-					// - use primary table projections as reference for comparison
-					//   filter indexes.
-					if lrCmp, llCmp, ok := mergeComparer(filters[0], lSecSch, rSecSch, projections, leftMap.KeyDesc(), leftMap.ValDesc(), rightMap.KeyDesc(), rightMap.ValDesc()); ok {
-						split := len(leftTags)
-						var rowJoiner *prollyToSqlJoiner
-						rowJoiner = newRowJoiner([]schema.Schema{lPriSch, rPriSch}, []int{split}, projections, leftMap.NodeStore())
-						if iter, err := newMergeKvIter(leftIter, rightIter, rowJoiner, lrCmp, llCmp, leftNorm, rightNorm, leftFilter, rightFilter, filters, n.Op.IsLeftOuter(), n.Op.IsExcludeNulls()); err == nil {
-							return iter, nil
-						}
-					}
-				}
+			exprs := ita.Expressions()
+			if !simpleLookupExpressions(exprs) {
+				return nil, nil
 			}
+
+			_, _, _, dstIter, _, _, dstTags, dstFilter, err := getSourceKv(ctx, right, false)
+			if err != nil {
+				return nil, err
+			}
+			if dstIter == nil {
+				return nil, nil
+			}
+
+			srcMap, _, srcIter, _, srcSchema, _, srcTags, srcFilter, err := getSourceKv(ctx, n.Left(), true)
+			if err != nil {
+				return nil, err
+			}
+			if srcSchema == nil {
+				return nil, nil
+			}
+
+			keyLookupMapper := newLookupKeyMapping(ctx, srcSchema, dstIter.InputKeyDesc(), exprs, srcMap.NodeStore())
+			if !keyLookupMapper.valid() {
+				return nil, nil
+			}
+
+			// conditions:
+			// (1) lookup or left lookup join
+			// (2) left-side is something we read KVs from (table or indexscan, ex: no subqueries)
+			// (3) right-side is an index lookup, by definition
+			// (4) the key expressions for the lookup are literals or columns (ex: no arithmetic yet)
+			split := len(srcTags)
+			projections := append(srcTags, dstTags...)
+			rowJoiner := newRowJoiner(
+				[]schema.Schema{srcSchema, dstIter.Schema()},
+				[]int{split},
+				projections,
+				dstIter.NodeStore(),
+			)
+			return newLookupKvIter(
+				srcIter, dstIter,
+				keyLookupMapper,
+				rowJoiner,
+				srcFilter, dstFilter, n.Filter,
+				n.Op.IsLeftOuter(), n.Op.IsExcludeNulls(),
+			)
+		case n.Op.IsMerge():
+			lMap, lIter, lPriSch, lSecSch, lTags, lFilter, lNorm, err := getMergeKv(ctx, n.Left())
+			if err != nil {
+				return nil, err
+			}
+			rMap, rIter, rPriSch, rSecSch, rTags, rFilter, rNorm, err := getMergeKv(ctx, n.Right())
+			if err != nil {
+				return nil, err
+			}
+
+			filters := expression.SplitConjunction(n.Filter)
+			projections := append(lTags, rTags...)
+
+			// - secondary indexes are source of comparison columns.
+			// - usually key tuple, but for keyless tables it's val tuple.
+			// - use primary table projections as reference for comparison
+			//   filter indexes.
+			lrCmp, llCmp, ok := mergeComparer(
+				filters[0],
+				lSecSch, rSecSch,
+				projections,
+				lMap.KeyDesc(), lMap.ValDesc(), rMap.KeyDesc(), rMap.ValDesc(),
+			)
+			if !ok {
+				return nil, nil
+			}
+
+			rowJoiner := newRowJoiner(
+				[]schema.Schema{lPriSch, rPriSch},
+				[]int{len(lTags)},
+				projections,
+				lMap.NodeStore(),
+			)
+
+			iter, err := newMergeKvIter(
+				lIter, rIter,
+				rowJoiner,
+				lrCmp, llCmp,
+				lNorm, rNorm,
+				lFilter, rFilter,
+				filters,
+				n.Op.IsLeftOuter(), n.Op.IsExcludeNulls(),
+			)
+			if err != nil {
+				return nil, nil
+			}
+
+			return iter, nil
 		}
 	case *plan.GroupBy:
-		if len(n.GroupByExprs) == 0 && len(n.SelectedExprs) == 1 {
-			if cnt, ok := n.SelectedExprs[0].(*aggregation.Count); ok {
-				if _, _, srcIter, _, srcSchema, _, _, srcFilter, err := getSourceKv(ctx, n.Child, true); err == nil && srcSchema != nil && srcFilter == nil {
-					iter, ok, err := newCountAggregationKvIter(srcIter, srcSchema, cnt.Child)
-					if ok && err == nil {
-						// (1) no grouping expressions (returns one row)
-						// (2) only one COUNT expression with a literal or field reference
-						// (3) table or ita as child (no filters)
-						return iter, nil
-					}
-				}
-			}
+		if len(n.GroupByExprs) != 0 || len(n.SelectedExprs) != 1 {
+			return nil, nil
 		}
-	default:
+
+		cnt, ok := n.SelectedExprs[0].(*aggregation.Count)
+		if !ok {
+			return nil, nil
+		}
+
+		_, _, srcIter, _, srcSchema, _, _, srcFilter, err := getSourceKv(ctx, n.Child, true)
+		if err != nil {
+			return nil, err
+		}
+		if srcSchema == nil || srcFilter != nil {
+			return nil, nil
+		}
+
+		iter, ok, err := newCountAggregationKvIter(srcIter, srcSchema, cnt.Child)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, nil
+		}
+
+		// (1) no grouping expressions (returns one row)
+		// (2) only one COUNT expression with a literal or field reference
+		// (3) table or ita as child (no filters)
+		return iter, nil
 	}
 	return nil, nil
 }
