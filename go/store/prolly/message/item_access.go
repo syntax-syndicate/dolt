@@ -24,14 +24,14 @@ type ItemAccess struct {
 	// bufStart is the offset to the start of the
 	// Item buffer within a serial.Message.
 	// bufLen is the length of the Item buffer.
-	bufStart, bufLen uint16
+	bufStart, bufLen uint32
 
 	// offStart, if nonzero, is the offset to the
 	// start of the uin16 offset buffer within a
 	// serial.Message. A zero value for offStart
 	// indicates an empty offset buffer.
 	// bufLen is the length of the Item buffer.
-	offStart, offLen uint16
+	offStart, offLen uint32
 
 	// If the serial.Message does not contain an
 	// offset buffer (offStart is zero), then
