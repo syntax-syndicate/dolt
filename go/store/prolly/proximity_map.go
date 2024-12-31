@@ -30,9 +30,10 @@ import (
 
 // ProximityMap wraps a tree.ProximityMap but operates on typed Tuples instead of raw bytestrings.
 type ProximityMap struct {
-	tuples  tree.ProximityMap[val.Tuple, val.Tuple, val.TupleDesc]
-	keyDesc val.TupleDesc
-	valDesc val.TupleDesc
+	tuples       tree.ProximityMap[val.Tuple, val.Tuple, val.TupleDesc]
+	keyDesc      val.TupleDesc
+	valDesc      val.TupleDesc
+	logChunkSize uint8
 }
 
 func (m ProximityMap) MutateInterface() MutableMapInterface {
@@ -132,7 +133,7 @@ func (p *proximityMapIter) Next(ctx context.Context) (k val.Tuple, v val.Tuple, 
 }
 
 // NewProximityMap creates a new ProximityMap from a supplied root node.
-func NewProximityMap(ctx context.Context, ns tree.NodeStore, node tree.Node, keyDesc val.TupleDesc, valDesc val.TupleDesc, distanceType vector.DistanceType) ProximityMap {
+func NewProximityMap(ctx context.Context, ns tree.NodeStore, node tree.Node, keyDesc val.TupleDesc, valDesc val.TupleDesc, distanceType vector.DistanceType, logChunkSize uint8) ProximityMap {
 	tuples := tree.ProximityMap[val.Tuple, val.Tuple, val.TupleDesc]{
 		Root:         node,
 		NodeStore:    ns,
@@ -153,9 +154,10 @@ func NewProximityMap(ctx context.Context, ns tree.NodeStore, node tree.Node, key
 		},
 	}
 	return ProximityMap{
-		tuples:  tuples,
-		keyDesc: keyDesc,
-		valDesc: valDesc,
+		tuples:       tuples,
+		keyDesc:      keyDesc,
+		valDesc:      valDesc,
+		logChunkSize: logChunkSize,
 	}
 }
 
@@ -174,7 +176,7 @@ func NewProximityMapFromTuples(ctx context.Context, ns tree.NodeStore, distanceT
 	mutableLevelMap := newMutableMap(emptyLevelMap)
 	return proximityMapBuilder{
 		ns:                    ns,
-		vectorIndexSerializer: message.NewVectorIndexSerializer(ns.Pool()),
+		vectorIndexSerializer: message.NewVectorIndexSerializer(ns.Pool(), logChunkSize),
 		distanceType:          distanceType,
 		keyDesc:               keyDesc,
 		valDesc:               valDesc,
@@ -241,7 +243,7 @@ func (b *proximityMapBuilder) makeRootNode(ctx context.Context, keys, values [][
 		return ProximityMap{}, err
 	}
 
-	return NewProximityMap(ctx, b.ns, rootNode, b.keyDesc, b.valDesc, b.distanceType), nil
+	return NewProximityMap(ctx, b.ns, rootNode, b.keyDesc, b.valDesc, b.distanceType, b.logChunkSize), nil
 }
 
 func (b *proximityMapBuilder) Flush(ctx context.Context) (ProximityMap, error) {
