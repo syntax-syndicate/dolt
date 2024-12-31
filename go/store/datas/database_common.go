@@ -1168,7 +1168,7 @@ func (db *database) doDelete(ctx context.Context, datasetIDstr string, workingse
 }
 
 // GC traverses the database starting at the Root and removes all unreferenced data from persistent storage.
-func (db *database) GC(ctx context.Context, mode types.GCMode, oldGenRefs, newGenRefs hash.HashSet, safepointF func() error) error {
+func (db *database) GC(ctx context.Context, mode types.GCMode, oldGenRefs, newGenRefs hash.HashSet, safepointF chunks.GCSafepointFunc) error {
 	return db.ValueStore.GC(ctx, mode, oldGenRefs, newGenRefs, safepointF)
 }
 

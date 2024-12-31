@@ -27,6 +27,7 @@ import (
 	"github.com/dolthub/dolt/go/libraries/doltcore/branch_control"
 	"github.com/dolthub/dolt/go/libraries/doltcore/dconfig"
 	"github.com/dolthub/dolt/go/libraries/doltcore/sqle/dsess"
+	"github.com/dolthub/dolt/go/store/hash"
 	"github.com/dolthub/dolt/go/store/types"
 )
 
@@ -119,57 +120,60 @@ func doDoltGC(ctx *sql.Context, args []string) (int, error) {
 		// TODO: If we got a callback at the beginning and an
 		// (allowed-to-block) callback at the end, we could more
 		// gracefully tear things down.
-		err = ddb.GC(ctx, mode, func() error {
-			if origepoch != -1 {
-				// Here we need to sanity check role and epoch.
-				if _, role, ok := sql.SystemVariables.GetGlobal(dsess.DoltClusterRoleVariable); ok {
-					if role.(string) != "primary" {
-						return fmt.Errorf("dolt_gc failed: when we began we were a primary in a cluster, but now our role is %s", role.(string))
+		err = ddb.GC(ctx, mode, func(keep func(hash.HashSet)) (func() error, error) {
+			finalSafepointF := func() error {
+				if origepoch != -1 {
+					// Here we need to sanity check role and epoch.
+					if _, role, ok := sql.SystemVariables.GetGlobal(dsess.DoltClusterRoleVariable); ok {
+						if role.(string) != "primary" {
+							return fmt.Errorf("dolt_gc failed: when we began we were a primary in a cluster, but now our role is %s", role.(string))
+						}
+						_, epoch, ok := sql.SystemVariables.GetGlobal(dsess.DoltClusterRoleEpochVariable)
+						if !ok {
+							return fmt.Errorf("dolt_gc failed: when we began we were a primary in a cluster, but we can no longer read the cluster role epoch.")
+						}
+						if origepoch != epoch.(int) {
+							return fmt.Errorf("dolt_gc failed: when we began we were primary in the cluster at epoch %d, but now we are at epoch %d. for gc to safely finalize, our role and epoch must not change throughout the gc.", origepoch, epoch.(int))
+						}
+					} else {
+						return fmt.Errorf("dolt_gc failed: when we began we were a primary in a cluster, but we can no longer read the cluster role.")
 					}
-					_, epoch, ok := sql.SystemVariables.GetGlobal(dsess.DoltClusterRoleEpochVariable)
-					if !ok {
-						return fmt.Errorf("dolt_gc failed: when we began we were a primary in a cluster, but we can no longer read the cluster role epoch.")
-					}
-					if origepoch != epoch.(int) {
-						return fmt.Errorf("dolt_gc failed: when we began we were primary in the cluster at epoch %d, but now we are at epoch %d. for gc to safely finalize, our role and epoch must not change throughout the gc.", origepoch, epoch.(int))
-					}
-				} else {
-					return fmt.Errorf("dolt_gc failed: when we began we were a primary in a cluster, but we can no longer read the cluster role.")
 				}
-			}
 
-			killed := make(map[uint32]struct{})
-			processes := ctx.ProcessList.Processes()
-			for _, p := range processes {
-				if p.Connection != ctx.Session.ID() {
-					// Kill any inflight query.
-					ctx.ProcessList.Kill(p.Connection)
-					// Tear down the connection itself.
-					ctx.KillConnection(p.Connection)
-					killed[p.Connection] = struct{}{}
-				}
-			}
-
-			// Look in processes until the connections are actually gone.
-			params := backoff.NewExponentialBackOff()
-			params.InitialInterval = 1 * time.Millisecond
-			params.MaxInterval = 25 * time.Millisecond
-			params.MaxElapsedTime = 3 * time.Second
-			err := backoff.Retry(func() error {
+				killed := make(map[uint32]struct{})
 				processes := ctx.ProcessList.Processes()
 				for _, p := range processes {
-					if _, ok := killed[p.Connection]; ok {
-						return errors.New("unable to establish safepoint.")
+					if p.Connection != ctx.Session.ID() {
+						// Kill any inflight query.
+						ctx.ProcessList.Kill(p.Connection)
+						// Tear down the connection itself.
+						ctx.KillConnection(p.Connection)
+						killed[p.Connection] = struct{}{}
 					}
 				}
+
+				// Look in processes until the connections are actually gone.
+				params := backoff.NewExponentialBackOff()
+				params.InitialInterval = 1 * time.Millisecond
+				params.MaxInterval = 25 * time.Millisecond
+				params.MaxElapsedTime = 3 * time.Second
+				err := backoff.Retry(func() error {
+					processes := ctx.ProcessList.Processes()
+					for _, p := range processes {
+						if _, ok := killed[p.Connection]; ok {
+							return errors.New("unable to establish safepoint.")
+						}
+					}
+					return nil
+				}, params)
+				if err != nil {
+					return err
+				}
+				ctx.Session.SetTransaction(nil)
+				dsess.DSessFromSess(ctx.Session).SetValidateErr(ErrServerPerformedGC)
 				return nil
-			}, params)
-			if err != nil {
-				return err
 			}
-			ctx.Session.SetTransaction(nil)
-			dsess.DSessFromSess(ctx.Session).SetValidateErr(ErrServerPerformedGC)
-			return nil
+			return finalSafepointF, nil
 		})
 		if err != nil {
 			return cmdFailure, err

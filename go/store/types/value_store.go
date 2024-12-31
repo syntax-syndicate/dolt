@@ -569,7 +569,7 @@ const (
 )
 
 // GC traverses the ValueStore from the root and removes unreferenced chunks from the ChunkStore
-func (lvs *ValueStore) GC(ctx context.Context, mode GCMode, oldGenRefs, newGenRefs hash.HashSet, safepointF func() error) error {
+func (lvs *ValueStore) GC(ctx context.Context, mode GCMode, oldGenRefs, newGenRefs hash.HashSet, safepointF chunks.GCSafepointFunc) error {
 	lvs.versOnce.Do(lvs.expectVersion)
 
 	lvs.transitionToOldGenGC()
@@ -726,7 +726,7 @@ func (lvs *ValueStore) gc(ctx context.Context,
 	hashFilter chunks.HasManyFunc,
 	chksMode chunks.GCMode,
 	src, dest chunks.ChunkStoreGarbageCollector,
-	safepointF func() error,
+	safepointF chunks.GCSafepointFunc,
 	finalize func() hash.HashSet) (chunks.GCFinalizer, error) {
 	keepChunks := make(chan []hash.Hash, gcBuffSize)
 
@@ -781,7 +781,7 @@ func (lvs *ValueStore) gc(ctx context.Context,
 func (lvs *ValueStore) gcProcessRefs(ctx context.Context,
 	initialToVisit hash.HashSet, keepHashes func(hs []hash.Hash) error,
 	walker *parallelRefWalker, hashFilter chunks.HasManyFunc,
-	safepointF func() error,
+	safepointF chunks.GCSafepointFunc,
 	finalize func() hash.HashSet) error {
 	visited := make(hash.HashSet)
 
@@ -871,6 +871,20 @@ func (lvs *ValueStore) gcProcessRefs(ctx context.Context,
 		}
 	}
 
+	keeper := func(hs hash.HashSet) {
+		for h := range hs {
+			lvs.gcAddChunk(h)
+		}
+	}
+	var finalSafepointF func() error
+	var finalSafepointErr error
+	if safepointF != nil {
+		finalSafepointF, err = safepointF(keeper)
+		if err != nil {
+			return err
+		}
+	}
+
 	final := finalize()
 	finalCopy := final.Copy()
 	for h, _ := range finalCopy {
@@ -881,15 +895,21 @@ func (lvs *ValueStore) gcProcessRefs(ctx context.Context,
 	finalCopy = nil
 	final, err = hashFilter(ctx, final)
 	if err != nil {
-		return err
+		if finalSafepointF != nil {
+			finalSafepointErr = finalSafepointF()
+		}
+		return errors.Join(err, finalSafepointErr)
 	}
 	err = process(final)
 	if err != nil {
-		return err
+		if finalSafepointF != nil {
+			finalSafepointErr = finalSafepointF()
+		}
+		return errors.Join(err, finalSafepointErr)
 	}
 
-	if safepointF != nil {
-		return safepointF()
+	if finalSafepointF != nil {
+		return finalSafepointF()
 	}
 	return nil
 }

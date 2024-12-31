@@ -187,6 +187,8 @@ const (
 	GCMode_Full
 )
 
+type GCSafepointFunc func(keep func(hash.HashSet)) (func() error, error)
+
 // ChunkStoreGarbageCollector is a ChunkStore that supports garbage collection.
 type ChunkStoreGarbageCollector interface {
 	ChunkStore
