@@ -672,11 +672,11 @@ func (tcs *testChunkSource) hasMany(addrs []hasRecord) (bool, error) {
 	panic("never used")
 }
 
-func (tcs *testChunkSource) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), stats *Stats) (bool, error) {
+func (tcs *testChunkSource) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	panic("never used")
 }
 
-func (tcs *testChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error) {
+func (tcs *testChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	panic("never used")
 }
 
@@ -700,7 +700,7 @@ func (tcs *testChunkSource) reader(ctx context.Context) (io.ReadCloser, uint64, 
 	panic("never used")
 }
 
-func (tcs *testChunkSource) getRecordRanges(ctx context.Context, requests []getRecord) (map[hash.Hash]Range, error) {
+func (tcs *testChunkSource) getRecordRanges(ctx context.Context, requests []getRecord, keeperFunc func(hash.Hash) bool) (map[hash.Hash]Range, gcBehavior, error) {
 	panic("never used")
 }
 

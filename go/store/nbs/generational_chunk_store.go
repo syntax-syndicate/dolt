@@ -142,7 +142,7 @@ func (gcs *GenerationalNBS) GetMany(ctx context.Context, hashes hash.HashSet, fo
 	return gcs.ghostGen.GetMany(ctx, notFound, found)
 }
 
-func (gcs *GenerationalNBS) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, CompressedChunk)) error {
+func (gcs *GenerationalNBS) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, CompressedChunk), gcReadMode GCReadMode) error {
 	mu := &sync.Mutex{}
 	notInOldGen := hashes.Copy()
 	err := gcs.oldGen.GetManyCompressed(ctx, hashes, func(ctx context.Context, chunk CompressedChunk) {
@@ -153,7 +153,7 @@ func (gcs *GenerationalNBS) GetManyCompressed(ctx context.Context, hashes hash.H
 		}()
 
 		found(ctx, chunk)
-	})
+	}, gcReadMode)
 
 	if err != nil {
 		return err
@@ -171,7 +171,7 @@ func (gcs *GenerationalNBS) GetManyCompressed(ctx context.Context, hashes hash.H
 			delete(notFound, chunk.Hash())
 		}()
 		found(ctx, chunk)
-	})
+	}, gcReadMode)
 	if err != nil {
 		return err
 	}

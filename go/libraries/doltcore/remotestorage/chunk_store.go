@@ -327,7 +327,7 @@ func (dcs *DoltChunkStore) GetMany(ctx context.Context, hashes hash.HashSet, fou
 		}
 		atomic.AddUint64(&decompressedSize, uint64(len(c.Data())))
 		found(ctx, &c)
-	})
+	}, nbs.GCReadMode_TakeDependency)
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("decompressed_bytes", int64(decompressedSize)))
 	if err != nil {
 		return err
@@ -340,7 +340,7 @@ func (dcs *DoltChunkStore) GetMany(ctx context.Context, hashes hash.HashSet, fou
 
 // GetMany gets the Chunks with |hashes| from the store. On return, |foundChunks| will have been fully sent all chunks
 // which have been found. Any non-present chunks will silently be ignored.
-func (dcs *DoltChunkStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, nbs.CompressedChunk)) error {
+func (dcs *DoltChunkStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, nbs.CompressedChunk), _ nbs.GCReadMode) error {
 	ctx, span := tracer.Start(ctx, "remotestorage.GetManyCompressed")
 	defer span.End()
 

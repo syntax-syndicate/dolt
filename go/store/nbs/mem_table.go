@@ -166,11 +166,14 @@ func (mt *memTable) get(ctx context.Context, h hash.Hash, stats *Stats) ([]byte,
 	return mt.chunks[h], nil
 }
 
-func (mt *memTable) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), stats *Stats) (bool, error) {
+func (mt *memTable) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	var remaining bool
 	for i, r := range reqs {
 		data := mt.chunks[*r.a]
 		if data != nil {
+			if keeperFunc != nil && keeperFunc(*r.a) {
+				return true, gcBehavior_Block, nil
+			}
 			c := chunks.NewChunkWithHash(hash.Hash(*r.a), data)
 			reqs[i].found = true
 			found(ctx, &c)
@@ -178,14 +181,17 @@ func (mt *memTable) getMany(ctx context.Context, eg *errgroup.Group, reqs []getR
 			remaining = true
 		}
 	}
-	return remaining, nil
+	return remaining, gcBehavior_Continue, nil
 }
 
-func (mt *memTable) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error) {
+func (mt *memTable) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	var remaining bool
 	for i, r := range reqs {
 		data := mt.chunks[*r.a]
 		if data != nil {
+			if keeperFunc != nil && keeperFunc(*r.a) {
+				return true, gcBehavior_Block, nil
+			}
 			c := chunks.NewChunkWithHash(hash.Hash(*r.a), data)
 			reqs[i].found = true
 			found(ctx, ChunkToCompressedChunk(c))
@@ -193,8 +199,7 @@ func (mt *memTable) getManyCompressed(ctx context.Context, eg *errgroup.Group, r
 			remaining = true
 		}
 	}
-
-	return remaining, nil
+	return remaining, gcBehavior_Continue, nil
 }
 
 func (mt *memTable) extract(ctx context.Context, chunks chan<- extractRecord) error {

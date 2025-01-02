@@ -26,7 +26,7 @@ import (
 )
 
 type GetManyer interface {
-	GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, nbs.CompressedChunk)) error
+	GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, nbs.CompressedChunk), gcReadMode nbs.GCReadMode) error
 }
 
 type ChunkFetcherable interface {
@@ -96,7 +96,7 @@ func (f *PullChunkFetcher) fetcherThread(finalize func()) error {
 				case f.resCh <- chk:
 				case <-f.doneCh:
 				}
-			})
+			}, nbs.GCReadMode_TakeDependency)
 			if err != nil {
 				return err
 			}

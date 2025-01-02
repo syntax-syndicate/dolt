@@ -108,7 +108,7 @@ func TestReadRecordRanges(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int(sz), n)
 
-	ranges, err := jcs.getRecordRanges(ctx, gets)
+	ranges, _, err := jcs.getRecordRanges(ctx, gets, nil)
 	require.NoError(t, err)
 
 	for h, rng := range ranges {

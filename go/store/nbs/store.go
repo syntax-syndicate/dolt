@@ -84,9 +84,15 @@ func makeGlobalCaches() {
 	makeManifestManager = func(m manifest) manifestManager { return manifestManager{m, manifestCache, manifestLocks} }
 }
 
+type GCReadMode int
+const (
+	GCReadMode_TakeDependency GCReadMode = 1
+	GCReadMode_NoDependency              = 2
+)
+
 type NBSCompressedChunkStore interface {
 	chunks.ChunkStore
-	GetManyCompressed(context.Context, hash.HashSet, func(context.Context, CompressedChunk)) error
+	GetManyCompressed(context.Context, hash.HashSet, func(context.Context, CompressedChunk), GCReadMode) error
 }
 
 type NomsBlockStore struct {
@@ -99,8 +105,13 @@ type NomsBlockStore struct {
 	tables   tableSet
 	upstream manifestContents
 
-	cond         *sync.Cond
+	cond *sync.Cond
+	// |true| after BeginGC is called, and false once the corresponding EndGC call returns.
 	gcInProgress bool
+	// When unlocked read operations are occuring against the block store,
+	// this variable is incremented. EndGC will not return until no read
+	// operations are outstanding.
+	gcOutstandingReads int32
 	// keeperFunc is set when |gcInProgress| and appends to the GC sweep queue
 	// or blocks on GC finalize
 	keeperFunc func(hash.Hash) bool
@@ -152,14 +163,14 @@ func (nbs *NomsBlockStore) GetChunkLocationsWithPaths(ctx context.Context, hashe
 }
 
 func (nbs *NomsBlockStore) GetChunkLocations(ctx context.Context, hashes hash.HashSet) (map[hash.Hash]map[hash.Hash]Range, error) {
-	gr := toGetRecords(hashes)
-	ranges := make(map[hash.Hash]map[hash.Hash]Range)
-
-	fn := func(css chunkSourceSet) error {
+	fn := func(gr []getRecord, ranges map[hash.Hash]map[hash.Hash]Range, keeperFunc func(hash.Hash) bool, css chunkSourceSet) (gcBehavior, error) {
 		for _, cs := range css {
-			rng, err := cs.getRecordRanges(ctx, gr)
+			rng, gcb, err := cs.getRecordRanges(ctx, gr, keeperFunc)
 			if err != nil {
-				return err
+				return gcb, err
+			}
+			if gcb != gcBehavior_Continue {
+				return gcb, nil
 			}
 
 			h := hash.Hash(cs.hash())
@@ -171,22 +182,65 @@ func (nbs *NomsBlockStore) GetChunkLocations(ctx context.Context, hashes hash.Ha
 				ranges[h] = rng
 			}
 		}
-		return nil
+		return gcBehavior_Continue, nil
 	}
 
-	tables := func() tableSet {
-		nbs.mu.RLock()
-		defer nbs.mu.RUnlock()
-		return nbs.tables
-	}()
+	// We are just populating chunk locations from tables.upstream and tables.novel.
+	//
+	// We begin the unlocked read and look for |gcBehavior_Block|. If we
+	// ever need to block because of GC, we restart from the beginning,
+	// throwing our current work away.
+	for true {
+		gr := toGetRecords(hashes)
+		ranges := make(map[hash.Hash]map[hash.Hash]Range)
 
-	if err := fn(tables.upstream); err != nil {
-		return nil, err
+		tables, keeperFunc := func() (tableSet, func(hash.Hash) bool) {
+			nbs.mu.Lock()
+			defer nbs.mu.Unlock()
+			nbs.beginRead()
+			return nbs.tables, nbs.keeperFunc
+		}()
+
+		gcb, err := fn(gr, ranges, keeperFunc, tables.upstream)
+		if err != nil {
+			nbs.mu.Lock()
+			defer nbs.mu.Unlock()
+			nbs.endRead()
+			return nil, err
+		}
+		if gcb != gcBehavior_Continue {
+			nbs.mu.Lock()
+			nbs.endRead()
+			err = nbs.waitForGC(ctx)
+			nbs.mu.Unlock()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		gcb, err = fn(gr, ranges, keeperFunc, tables.novel)
+		if err != nil {
+			nbs.mu.Lock()
+			defer nbs.mu.Unlock()
+			nbs.endRead()
+			return nil, err
+		}
+		if gcb != gcBehavior_Continue {
+			nbs.mu.Lock()
+			nbs.endRead()
+			err = nbs.waitForGC(ctx)
+			nbs.mu.Unlock()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		return ranges, nil
 	}
-	if err := fn(tables.novel); err != nil {
-		return nil, err
-	}
-	return ranges, nil
+
+	panic("impossible")
 }
 
 func (nbs *NomsBlockStore) conjoinIfRequired(ctx context.Context) (bool, error) {
@@ -703,7 +757,7 @@ func (nbs *NomsBlockStore) WithoutConjoiner() *NomsBlockStore {
 	}
 }
 
-// Wait for GC to complete to continue with writes
+// Wait for GC to complete to continue with ongoing operation.
 func (nbs *NomsBlockStore) waitForGC(ctx context.Context) error {
 	stop := make(chan struct{})
 	defer close(stop)
@@ -845,62 +899,100 @@ func (nbs *NomsBlockStore) Get(ctx context.Context, h hash.Hash) (chunks.Chunk, 
 		nbs.stats.ChunksPerGet.Sample(1)
 	}()
 
-	data, tables, err := func() ([]byte, chunkReader, error) {
-		var data []byte
-		nbs.mu.RLock()
-		defer nbs.mu.RUnlock()
-		if nbs.mt != nil {
-			var err error
-			data, err = nbs.mt.get(ctx, h, nbs.stats)
-
-			if err != nil {
-				return nil, nil, err
+	for true {
+		data, tables, keeperFunc, err := func() ([]byte, chunkReader, func(hash.Hash) bool, error) {
+			var data []byte
+			nbs.mu.Lock()
+			defer nbs.mu.Unlock()
+			nbs.beginRead()
+			if nbs.mt != nil {
+				var err error
+				data, err = nbs.mt.get(ctx, h, nbs.stats)
+				if err != nil {
+					return nil, nil, nil, err
+				}
 			}
+			return data, nbs.tables, nbs.keeperFunc, nil
+		}()
+		if err != nil {
+			nbs.mu.Lock()
+			nbs.endRead()
+			nbs.mu.Unlock()
+			return chunks.EmptyChunk, err
 		}
-		return data, nbs.tables, nil
-	}()
 
-	if err != nil {
-		return chunks.EmptyChunk, err
+		if data != nil {
+			if keeperFunc != nil && keeperFunc(h) {
+				nbs.mu.Lock()
+				nbs.endRead()
+				err = nbs.waitForGC(ctx)
+				nbs.mu.Unlock()
+				if err != nil {
+					return chunks.EmptyChunk, err
+				}
+				continue
+			}
+			nbs.mu.Lock()
+			nbs.endRead()
+			nbs.mu.Unlock()
+			return chunks.NewChunkWithHash(h, data), nil
+		}
+
+		data, err = tables.get(ctx, h, nbs.stats)
+		if err != nil {
+			nbs.mu.Lock()
+			nbs.endRead()
+			nbs.mu.Unlock()
+			return chunks.EmptyChunk, err
+		}
+
+		if data != nil {
+			if keeperFunc != nil && keeperFunc(h) {
+				nbs.mu.Lock()
+				nbs.endRead()
+				err = nbs.waitForGC(ctx)
+				nbs.mu.Unlock()
+				if err != nil {
+					return chunks.EmptyChunk, err
+				}
+				continue
+			}
+			nbs.mu.Lock()
+			nbs.endRead()
+			nbs.mu.Unlock()
+			return chunks.NewChunkWithHash(h, data), nil
+		}
+
+		nbs.mu.Lock()
+		nbs.endRead()
+		nbs.mu.Unlock()
+		return chunks.EmptyChunk, nil
 	}
 
-	if data != nil {
-		return chunks.NewChunkWithHash(h, data), nil
-	}
-
-	data, err = tables.get(ctx, h, nbs.stats)
-
-	if err != nil {
-		return chunks.EmptyChunk, err
-	}
-
-	if data != nil {
-		return chunks.NewChunkWithHash(h, data), nil
-	}
-
-	return chunks.EmptyChunk, nil
+	panic("impossible")
 }
 
 func (nbs *NomsBlockStore) GetMany(ctx context.Context, hashes hash.HashSet, found func(context.Context, *chunks.Chunk)) error {
 	ctx, span := tracer.Start(ctx, "nbs.GetMany", trace.WithAttributes(attribute.Int("num_hashes", len(hashes))))
 	span.End()
-	return nbs.getManyWithFunc(ctx, hashes, func(ctx context.Context, cr chunkReader, eg *errgroup.Group, reqs []getRecord, stats *Stats) (bool, error) {
-		return cr.getMany(ctx, eg, reqs, found, nbs.stats)
+	return nbs.getManyWithFunc(ctx, hashes, GCReadMode_TakeDependency, func(ctx context.Context, cr chunkReader, eg *errgroup.Group, reqs []getRecord, keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
+		return cr.getMany(ctx, eg, reqs, found, keeperFunc, nbs.stats)
 	})
 }
 
-func (nbs *NomsBlockStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, CompressedChunk)) error {
+func (nbs *NomsBlockStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, CompressedChunk), gcReadMode GCReadMode) error {
 	ctx, span := tracer.Start(ctx, "nbs.GetManyCompressed", trace.WithAttributes(attribute.Int("num_hashes", len(hashes))))
 	defer span.End()
-	return nbs.getManyWithFunc(ctx, hashes, func(ctx context.Context, cr chunkReader, eg *errgroup.Group, reqs []getRecord, stats *Stats) (bool, error) {
-		return cr.getManyCompressed(ctx, eg, reqs, found, nbs.stats)
+	return nbs.getManyWithFunc(ctx, hashes, gcReadMode, func(ctx context.Context, cr chunkReader, eg *errgroup.Group, reqs []getRecord, keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
+		return cr.getManyCompressed(ctx, eg, reqs, found, keeperFunc, nbs.stats)
 	})
 }
 
 func (nbs *NomsBlockStore) getManyWithFunc(
 	ctx context.Context,
 	hashes hash.HashSet,
-	getManyFunc func(ctx context.Context, cr chunkReader, eg *errgroup.Group, reqs []getRecord, stats *Stats) (bool, error),
+	gcReadMode GCReadMode,
+	getManyFunc func(ctx context.Context, cr chunkReader, eg *errgroup.Group, reqs []getRecord, keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error),
 ) error {
 	t1 := time.Now()
 	reqs := toGetRecords(hashes)
@@ -912,33 +1004,88 @@ func (nbs *NomsBlockStore) getManyWithFunc(
 		}
 	}()
 
-	eg, ctx := errgroup.WithContext(ctx)
-	const ioParallelism = 16
-	eg.SetLimit(ioParallelism)
+	for true {
+		eg, egCtx := errgroup.WithContext(ctx)
+		const ioParallelism = 16
+		eg.SetLimit(ioParallelism)
+		var keeperFunc func(hash.Hash) bool
 
-	tables, remaining, err := func() (tables chunkReader, remaining bool, err error) {
-		nbs.mu.RLock()
-		defer nbs.mu.RUnlock()
-		tables = nbs.tables
-		remaining = true
-		if nbs.mt != nil {
-			remaining, err = getManyFunc(ctx, nbs.mt, eg, reqs, nbs.stats)
+		tables, remaining, gcb, err := func() (tables chunkReader, remaining bool, gcb gcBehavior, err error) {
+			nbs.mu.Lock()
+			defer nbs.mu.Unlock()
+			nbs.beginRead()
+			tables = nbs.tables
+			remaining = true
+			gcb = gcBehavior_Continue
+			if gcReadMode == GCReadMode_TakeDependency {
+				keeperFunc = nbs.keeperFunc
+			}
+			if nbs.mt != nil {
+				remaining, gcb, err = getManyFunc(egCtx, nbs.mt, eg, reqs, keeperFunc, nbs.stats)
+			}
+			return
+		}()
+		if err != nil {
+			eg.Wait()
+			nbs.mu.Lock()
+			nbs.endRead()
+			nbs.mu.Unlock()
+			return err
 		}
-		return
-	}()
-	if err != nil {
+		if gcb != gcBehavior_Continue {
+			err = eg.Wait()
+			if err != nil {
+				nbs.mu.Lock()
+				nbs.endRead()
+				nbs.mu.Unlock()
+				return err
+			}
+			nbs.mu.Lock()
+			nbs.endRead()
+			err = nbs.waitForGC(ctx)
+			nbs.mu.Unlock()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		if remaining {
+			remaining, gcb, err = getManyFunc(egCtx, tables, eg, reqs, keeperFunc, nbs.stats)
+		}
+		if err != nil {
+			eg.Wait()
+			nbs.mu.Lock()
+			nbs.endRead()
+			nbs.mu.Unlock()
+			return err
+		}
+		if gcb != gcBehavior_Continue {
+			err = eg.Wait()
+			if err != nil {
+				nbs.mu.Lock()
+				nbs.endRead()
+				nbs.mu.Unlock()
+				return err
+			}
+			nbs.mu.Lock()
+			nbs.endRead()
+			err = nbs.waitForGC(ctx)
+			nbs.mu.Unlock()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		err = eg.Wait()
+		nbs.mu.Lock()
+		nbs.endRead()
+		nbs.mu.Unlock()
 		return err
 	}
 
-	if remaining {
-		_, err = getManyFunc(ctx, tables, eg, reqs, nbs.stats)
-	}
-
-	if err != nil {
-		eg.Wait()
-		return err
-	}
-	return eg.Wait()
+	panic("impossible")
 }
 
 func toGetRecords(hashes hash.HashSet) []getRecord {
@@ -1593,9 +1740,34 @@ func (nbs *NomsBlockStore) EndGC() {
 	if !nbs.gcInProgress {
 		panic("EndGC called when gc was not in progress")
 	}
+	for nbs.gcOutstandingReads > 0 {
+		nbs.cond.Wait()
+	}
 	nbs.gcInProgress = false
 	nbs.keeperFunc = nil
 	nbs.cond.Broadcast()
+}
+
+// beginRead() is called with |nbs.mu| held. It signals an ongoing read
+// operation which will be operating against the existing table files without
+// |nbs.mu| held. The read should be bracketed with a call to |endRead|.
+//
+// If there is an ongoing GC operation when this call is made, it is guaranteed
+// not to complete until the corresponding |endRead| call.
+func (nbs *NomsBlockStore) beginRead() {
+	if nbs.gcInProgress {
+		nbs.gcOutstandingReads += 1
+	}
+}
+
+func (nbs *NomsBlockStore) endRead() {
+	if nbs.gcInProgress {
+		nbs.gcOutstandingReads -= 1
+		if nbs.gcOutstandingReads < 0 {
+			panic("impossible")
+		}
+		nbs.cond.Broadcast()
+	}
 }
 
 func (nbs *NomsBlockStore) MarkAndSweepChunks(ctx context.Context, hashes <-chan []hash.Hash, dest chunks.ChunkStore, mode chunks.GCMode) (chunks.GCFinalizer, error) {
@@ -1705,7 +1877,7 @@ LOOP:
 				break LOOP
 			}
 			var addErr error
-			mu := new(sync.Mutex)
+			var mu sync.Mutex
 			hashset := hash.NewHashSet(hs...)
 			found := 0
 			err := src.GetManyCompressed(ctx, hashset, func(ctx context.Context, c CompressedChunk) {
@@ -1716,7 +1888,7 @@ LOOP:
 				}
 				found += 1
 				addErr = gcc.addChunk(ctx, c)
-			})
+			}, GCReadMode_NoDependency)
 			if err != nil {
 				return nil, err
 			}
@@ -1864,7 +2036,7 @@ func (nbs *NomsBlockStore) setRootChunk(ctx context.Context, root, previous hash
 }
 
 // CalcReads computes the number of IO operations necessary to fetch |hashes|.
-func CalcReads(nbs *NomsBlockStore, hashes hash.HashSet, blockSize uint64) (reads int, split bool, err error) {
+func CalcReads(nbs *NomsBlockStore, hashes hash.HashSet, blockSize uint64, keeperFunc func(hash.Hash) bool) (reads int, split bool, gcb gcBehavior, err error) {
 	reqs := toGetRecords(hashes)
 	tables := func() (tables tableSet) {
 		nbs.mu.RLock()
@@ -1874,14 +2046,17 @@ func CalcReads(nbs *NomsBlockStore, hashes hash.HashSet, blockSize uint64) (read
 		return
 	}()
 
-	reads, split, remaining, err := tableSetCalcReads(tables, reqs, blockSize)
+	gcb = gcBehavior_Continue
+	var remaining bool
+
+	reads, split, remaining, gcb, err = tableSetCalcReads(tables, reqs, blockSize, keeperFunc)
 
 	if err != nil {
-		return 0, false, err
+		return 0, false, gcBehavior_Continue, err
 	}
 
 	if remaining {
-		return 0, false, errors.New("failed to find all chunks")
+		return 0, false, gcBehavior_Continue, errors.New("failed to find all chunks")
 	}
 
 	return

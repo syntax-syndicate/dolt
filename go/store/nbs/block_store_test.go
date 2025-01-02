@@ -284,7 +284,7 @@ func (suite *BlockStoreSuite) TestChunkStoreGetMany() {
 
 	sort.Sort(found)
 	sort.Sort(hashes)
-	suite.True(found.Equals(hashes))
+	suite.True(found.Equals(hashes), "found hashes %v equals all hashes %v", found, hashes)
 }
 
 func (suite *BlockStoreSuite) TestChunkStoreHasMany() {

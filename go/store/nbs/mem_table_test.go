@@ -286,30 +286,36 @@ func (crg chunkReaderGroup) hasMany(addrs []hasRecord) (bool, error) {
 	return true, nil
 }
 
-func (crg chunkReaderGroup) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), stats *Stats) (bool, error) {
+func (crg chunkReaderGroup) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	for _, haver := range crg {
-		remaining, err := haver.getMany(ctx, eg, reqs, found, stats)
+		remaining, gcb, err := haver.getMany(ctx, eg, reqs, found, keeperFunc, stats)
 		if err != nil {
-			return true, err
+			return true, gcBehavior_Continue, err
+		}
+		if gcb != gcBehavior_Continue {
+			return remaining, gcb, nil
 		}
 		if !remaining {
-			return false, nil
+			return false, gcBehavior_Continue, nil
 		}
 	}
-	return true, nil
+	return true, gcBehavior_Continue, nil
 }
 
-func (crg chunkReaderGroup) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error) {
+func (crg chunkReaderGroup) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	for _, haver := range crg {
-		remaining, err := haver.getManyCompressed(ctx, eg, reqs, found, stats)
+		remaining, gcb, err := haver.getManyCompressed(ctx, eg, reqs, found, keeperFunc, stats)
 		if err != nil {
-			return true, err
+			return true, gcBehavior_Continue, err
+		}
+		if gcb != gcBehavior_Continue {
+			return remaining, gcb, nil
 		}
 		if !remaining {
-			return false, nil
+			return false, gcBehavior_Continue, nil
 		}
 	}
-	return true, nil
+	return true, gcBehavior_Continue, nil
 }
 
 func (crg chunkReaderGroup) count() (count uint32, err error) {

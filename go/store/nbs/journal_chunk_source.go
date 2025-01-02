@@ -83,7 +83,7 @@ type journalRecord struct {
 	idx int
 }
 
-func (s journalChunkSource) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), stats *Stats) (bool, error) {
+func (s journalChunkSource) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	return s.getManyCompressed(ctx, eg, reqs, func(ctx context.Context, cc CompressedChunk) {
 		ch, err := cc.ToChunk()
 		if err != nil {
@@ -94,7 +94,7 @@ func (s journalChunkSource) getMany(ctx context.Context, eg *errgroup.Group, req
 		}
 		chWHash := chunks.NewChunkWithHash(cc.Hash(), ch.Data())
 		found(ctx, &chWHash)
-	}, stats)
+	}, keeperFunc, stats)
 }
 
 // getManyCompressed implements chunkReader. Here we (1) synchronously check
@@ -103,7 +103,7 @@ func (s journalChunkSource) getMany(ctx context.Context, eg *errgroup.Group, req
 // and then (4) asynchronously perform reads. We release the journal read
 // lock after returning when all reads are completed, which can be after the
 // function returns.
-func (s journalChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error) {
+func (s journalChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	defer trace.StartRegion(ctx, "journalChunkSource.getManyCompressed").End()
 
 	var remaining bool
@@ -118,6 +118,10 @@ func (s journalChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.
 		if !ok {
 			remaining = true
 			continue
+		}
+		if keeperFunc != nil && keeperFunc(*r.a) {
+			s.journal.lock.RUnlock()
+			return true, gcBehavior_Block, nil
 		}
 		jReqs = append(jReqs, journalRecord{r: rang, idx: i})
 		reqs[i].found = true
@@ -150,7 +154,7 @@ func (s journalChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.
 		wg.Wait()
 		s.journal.lock.RUnlock()
 	}()
-	return remaining, nil
+	return remaining, gcBehavior_Continue, nil
 }
 
 func (s journalChunkSource) count() (uint32, error) {
@@ -171,7 +175,7 @@ func (s journalChunkSource) reader(ctx context.Context) (io.ReadCloser, uint64, 
 	return rdr, uint64(sz), err
 }
 
-func (s journalChunkSource) getRecordRanges(ctx context.Context, requests []getRecord) (map[hash.Hash]Range, error) {
+func (s journalChunkSource) getRecordRanges(ctx context.Context, requests []getRecord, keeperFunc func(hash.Hash) bool) (map[hash.Hash]Range, gcBehavior, error) {
 	ranges := make(map[hash.Hash]Range, len(requests))
 	for _, req := range requests {
 		if req.found {
@@ -179,14 +183,17 @@ func (s journalChunkSource) getRecordRanges(ctx context.Context, requests []getR
 		}
 		rng, ok, err := s.journal.getRange(ctx, *req.a)
 		if err != nil {
-			return nil, err
+			return nil, gcBehavior_Continue, err
 		} else if !ok {
 			continue
+		}
+		if keeperFunc != nil && keeperFunc(*req.a) {
+			return nil, gcBehavior_Block, nil
 		}
 		req.found = true // update |requests|
 		ranges[hash.Hash(*req.a)] = rng
 	}
-	return ranges, nil
+	return ranges, gcBehavior_Continue, nil
 }
 
 // size implements chunkSource.

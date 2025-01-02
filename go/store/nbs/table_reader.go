@@ -367,26 +367,33 @@ func (tr tableReader) getMany(
 	eg *errgroup.Group,
 	reqs []getRecord,
 	found func(context.Context, *chunks.Chunk),
-	stats *Stats) (bool, error) {
+	keeperFunc func(hash.Hash) bool,
+	stats *Stats) (bool, gcBehavior, error) {
 
 	// Pass #1: Iterate over |reqs| and |tr.prefixes| (both sorted by address) and build the set
 	// of table locations which must be read in order to satisfy the getMany operation.
-	offsetRecords, remaining, err := tr.findOffsets(reqs)
+	offsetRecords, remaining, gcBehavior, err := tr.findOffsets(reqs, keeperFunc)
 	if err != nil {
-		return false, err
+		return false, gcBehavior, err
+	}
+	if gcBehavior != gcBehavior_Continue {
+		return remaining, gcBehavior, nil
 	}
 	err = tr.getManyAtOffsets(ctx, eg, offsetRecords, found, stats)
-	return remaining, err
+	return remaining, gcBehavior_Continue, err
 }
-func (tr tableReader) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error) {
+func (tr tableReader) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
 	// Pass #1: Iterate over |reqs| and |tr.prefixes| (both sorted by address) and build the set
 	// of table locations which must be read in order to satisfy the getMany operation.
-	offsetRecords, remaining, err := tr.findOffsets(reqs)
+	offsetRecords, remaining, gcBehavior, err := tr.findOffsets(reqs, keeperFunc)
 	if err != nil {
-		return false, err
+		return false, gcBehavior, err
+	}
+	if gcBehavior != gcBehavior_Continue {
+		return remaining, gcBehavior, nil
 	}
 	err = tr.getManyCompressedAtOffsets(ctx, eg, offsetRecords, found, stats)
-	return remaining, err
+	return remaining, gcBehavior_Continue, err
 }
 
 func (tr tableReader) getManyCompressedAtOffsets(ctx context.Context, eg *errgroup.Group, offsetRecords offsetRecSlice, found func(context.Context, CompressedChunk), stats *Stats) error {
@@ -485,7 +492,7 @@ func (tr tableReader) getManyAtOffsetsWithReadFunc(
 // chunks remaining will be set to false upon return. If some are not here,
 // then remaining will be true. The result offsetRecSlice is sorted in offset
 // order.
-func (tr tableReader) findOffsets(reqs []getRecord) (ors offsetRecSlice, remaining bool, err error) {
+func (tr tableReader) findOffsets(reqs []getRecord, keeperFunc func(hash.Hash) bool) (ors offsetRecSlice, remaining bool, gcb gcBehavior, err error) {
 	filterIdx := uint32(0)
 	filterLen := uint32(len(tr.prefixes))
 	ors = make(offsetRecSlice, 0, len(reqs))
@@ -528,13 +535,16 @@ func (tr tableReader) findOffsets(reqs []getRecord) (ors offsetRecSlice, remaini
 		for j := filterIdx; j < filterLen && req.prefix == tr.prefixes[j]; j++ {
 			m, err := tr.idx.entrySuffixMatches(j, req.a)
 			if err != nil {
-				return nil, false, err
+				return nil, false, gcBehavior_Continue, err
 			}
 			if m {
+				if keeperFunc != nil && keeperFunc(*req.a) {
+					return nil, true, gcBehavior_Block, nil
+				}
 				reqs[i].found = true
 				entry, err := tr.idx.indexEntry(j, nil)
 				if err != nil {
-					return nil, false, err
+					return nil, false, gcBehavior_Continue, err
 				}
 				ors = append(ors, offsetRec{req.a, entry.Offset(), entry.Length()})
 				break
@@ -547,7 +557,7 @@ func (tr tableReader) findOffsets(reqs []getRecord) (ors offsetRecSlice, remaini
 	}
 
 	sort.Sort(ors)
-	return ors, remaining, nil
+	return ors, remaining, gcBehavior_Continue, nil
 }
 
 func canReadAhead(fRec offsetRec, curStart, curEnd, blockSize uint64) (newEnd uint64, canRead bool) {
@@ -571,12 +581,15 @@ func canReadAhead(fRec offsetRec, curStart, curEnd, blockSize uint64) (newEnd ui
 	return fRec.offset + uint64(fRec.length), true
 }
 
-func (tr tableReader) calcReads(reqs []getRecord, blockSize uint64) (reads int, remaining bool, err error) {
+func (tr tableReader) calcReads(reqs []getRecord, blockSize uint64, keeperFunc func(hash.Hash) bool) (reads int, remaining bool, gcb gcBehavior, err error) {
 	var offsetRecords offsetRecSlice
 	// Pass #1: Build the set of table locations which must be read in order to find all the elements of |reqs| which are present in this table.
-	offsetRecords, remaining, err = tr.findOffsets(reqs)
+	offsetRecords, remaining, gcb, err = tr.findOffsets(reqs, keeperFunc)
 	if err != nil {
-		return 0, false, err
+		return 0, false, gcb, err
+	}
+	if gcb != gcBehavior_Continue {
+		return 0, remaining, gcb, err
 	}
 
 	// Now |offsetRecords| contains all locations within the table which must
@@ -668,11 +681,14 @@ func (tr tableReader) reader(ctx context.Context) (io.ReadCloser, uint64, error)
 	return r, sz, nil
 }
 
-func (tr tableReader) getRecordRanges(ctx context.Context, requests []getRecord) (map[hash.Hash]Range, error) {
+func (tr tableReader) getRecordRanges(ctx context.Context, requests []getRecord, keeperFunc func(hash.Hash) bool) (map[hash.Hash]Range, gcBehavior, error) {
 	// findOffsets sets getRecord.found
-	recs, _, err := tr.findOffsets(requests)
+	recs, _, gcb, err := tr.findOffsets(requests, keeperFunc)
 	if err != nil {
-		return nil, err
+		return nil, gcb, err
+	}
+	if gcb != gcBehavior_Continue {
+		return nil, gcb, nil
 	}
 	ranges := make(map[hash.Hash]Range, len(recs))
 	for _, r := range recs {
@@ -681,7 +697,7 @@ func (tr tableReader) getRecordRanges(ctx context.Context, requests []getRecord)
 			Length: r.length,
 		}
 	}
-	return ranges, nil
+	return ranges, gcb, nil
 }
 
 func (tr tableReader) currentSize() uint64 {

@@ -290,7 +290,7 @@ func TestGetMany(t *testing.T) {
 	eg, ctx := errgroup.WithContext(context.Background())
 
 	got := make([]*chunks.Chunk, 0)
-	_, err = tr.getMany(ctx, eg, getBatch, func(ctx context.Context, c *chunks.Chunk) { got = append(got, c) }, &Stats{})
+	_, _, err = tr.getMany(ctx, eg, getBatch, func(ctx context.Context, c *chunks.Chunk) { got = append(got, c) }, nil, &Stats{})
 	require.NoError(t, err)
 	require.NoError(t, eg.Wait())
 
@@ -324,13 +324,13 @@ func TestCalcReads(t *testing.T) {
 	gb2 := []getRecord{getBatch[0], getBatch[2]}
 	sort.Sort(getRecordByPrefix(getBatch))
 
-	reads, remaining, err := tr.calcReads(getBatch, 0)
+	reads, remaining, _, err := tr.calcReads(getBatch, 0, nil)
 	require.NoError(t, err)
 	assert.False(remaining)
 	assert.Equal(1, reads)
 
 	sort.Sort(getRecordByPrefix(gb2))
-	reads, remaining, err = tr.calcReads(gb2, 0)
+	reads, remaining, _, err = tr.calcReads(gb2, 0, nil)
 	require.NoError(t, err)
 	assert.False(remaining)
 	assert.Equal(2, reads)
@@ -461,7 +461,7 @@ func doTestNGetMany(t *testing.T, count int) {
 	eg, ctx := errgroup.WithContext(context.Background())
 
 	got := make([]*chunks.Chunk, 0)
-	_, err = tr.getMany(ctx, eg, getBatch, func(ctx context.Context, c *chunks.Chunk) { got = append(got, c) }, &Stats{})
+	_, _, err = tr.getMany(ctx, eg, getBatch, func(ctx context.Context, c *chunks.Chunk) { got = append(got, c) }, nil, &Stats{})
 	require.NoError(t, err)
 	require.NoError(t, eg.Wait())
 

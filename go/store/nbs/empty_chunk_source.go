@@ -46,12 +46,12 @@ func (ecs emptyChunkSource) get(ctx context.Context, h hash.Hash, stats *Stats) 
 	return nil, nil
 }
 
-func (ecs emptyChunkSource) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), stats *Stats) (bool, error) {
-	return true, nil
+func (ecs emptyChunkSource) getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
+	return true, gcBehavior_Continue, nil
 }
 
-func (ecs emptyChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error) {
-	return true, nil
+func (ecs emptyChunkSource) getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error) {
+	return true, gcBehavior_Continue, nil
 }
 
 func (ecs emptyChunkSource) count() (uint32, error) {
@@ -74,8 +74,8 @@ func (ecs emptyChunkSource) reader(context.Context) (io.ReadCloser, uint64, erro
 	return io.NopCloser(&bytes.Buffer{}), 0, nil
 }
 
-func (ecs emptyChunkSource) getRecordRanges(ctx context.Context, requests []getRecord) (map[hash.Hash]Range, error) {
-	return map[hash.Hash]Range{}, nil
+func (ecs emptyChunkSource) getRecordRanges(ctx context.Context, requests []getRecord, keeperFunc func(hash.Hash) bool) (map[hash.Hash]Range, gcBehavior, error) {
+	return map[hash.Hash]Range{}, gcBehavior_Continue, nil
 }
 
 func (ecs emptyChunkSource) currentSize() uint64 {

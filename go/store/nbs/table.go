@@ -187,6 +187,13 @@ type extractRecord struct {
 	err  error
 }
 
+type gcBehavior bool
+
+const (
+	gcBehavior_Continue gcBehavior = false
+	gcBehavior_Block               = true
+)
+
 type chunkReader interface {
 	// has returns true if a chunk with addr |h| is present.
 	has(h hash.Hash) (bool, error)
@@ -200,11 +207,11 @@ type chunkReader interface {
 
 	// getMany sets getRecord.found to true, and calls |found| for each present getRecord query.
 	// It returns true if any getRecord query was not found in this chunkReader.
-	getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), stats *Stats) (bool, error)
+	getMany(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, *chunks.Chunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error)
 
 	// getManyCompressed sets getRecord.found to true, and calls |found| for each present getRecord query.
 	// It returns true if any getRecord query was not found in this chunkReader.
-	getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), stats *Stats) (bool, error)
+	getManyCompressed(ctx context.Context, eg *errgroup.Group, reqs []getRecord, found func(context.Context, CompressedChunk), keeperFunc func(hash.Hash) bool, stats *Stats) (bool, gcBehavior, error)
 
 	// count returns the chunk count for this chunkReader.
 	count() (uint32, error)
@@ -226,7 +233,7 @@ type chunkSource interface {
 	reader(context.Context) (io.ReadCloser, uint64, error)
 
 	// getRecordRanges sets getRecord.found to true, and returns a Range for each present getRecord query.
-	getRecordRanges(ctx context.Context, requests []getRecord) (map[hash.Hash]Range, error)
+	getRecordRanges(ctx context.Context, requests []getRecord, keeperFunc func(hash.Hash) bool) (map[hash.Hash]Range, gcBehavior, error)
 
 	// index returns the tableIndex of this chunkSource.
 	index() (tableIndex, error)
