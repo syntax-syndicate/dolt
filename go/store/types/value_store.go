@@ -642,6 +642,11 @@ func (lvs *ValueStore) GC(ctx context.Context, mode GCMode, oldGenRefs, newGenRe
 				oldGenHasMany = newFileHasMany
 			}
 
+			newGenRefs, err = oldGenHasMany(ctx, newGenRefs)
+			if err != nil {
+				return err
+			}
+
 			newGenFinalizer, err = lvs.gc(ctx, newGenRefs, oldGenHasMany, chksMode, collector, newGen, safepointF, lvs.transitionToFinalizingGC)
 			if err != nil {
 				return err

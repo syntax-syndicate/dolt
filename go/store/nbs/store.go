@@ -85,6 +85,7 @@ func makeGlobalCaches() {
 }
 
 type GCReadMode int
+
 const (
 	GCReadMode_TakeDependency GCReadMode = 1
 	GCReadMode_NoDependency              = 2
