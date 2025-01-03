@@ -91,15 +91,29 @@ message RangeChunk {
   uint32 length = 3;
 }
 
+message DictionaryChunk {
+  bytes hash = 1;
+  uint64 dict_offset = 2;
+  uint32 dict_length = 3;
+  uint64 chunk_offset = 4;
+  uint32 chunk_length = 5;
+}
+
 message HttpGetRange {
   string url = 1;
   repeated RangeChunk ranges = 2;
+}
+
+message ArchiveGetRange {
+  string url= 1;
+  repeated DictionaryChunk ranges = 2;
 }
 
 message DownloadLoc {
   oneof location {
     HttpGetChunk http_get = 1;
     HttpGetRange http_get_range = 2;
+    ArchiveGetRange archive_get_range = 5;
   }
   google.protobuf.Timestamp refresh_after = 3;
   RefreshTableFileUrlRequest refresh_request = 4;
