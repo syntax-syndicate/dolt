@@ -90,7 +90,7 @@ func (g GhostBlockStore) GetMany(ctx context.Context, hashes hash.HashSet, found
 	return nil
 }
 
-func (g GhostBlockStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, CompressedChunk)) error {
+func (g GhostBlockStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, ToChunker)) error {
 	for h := range hashes {
 		if g.skippedRefs.Has(h) {
 			found(ctx, NewGhostCompressedChunk(h))
