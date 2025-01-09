@@ -87,7 +87,7 @@ func (gcc *gcCopier) copyTablesToDir(ctx context.Context, tfp tableFilePersister
 	if exists {
 		return []tableSpec{
 			{
-				name:       addr,
+				hash:       addr,
 				chunkCount: uint32(gcc.writer.ChunkCount()),
 			},
 		}, nil
@@ -99,7 +99,7 @@ func (gcc *gcCopier) copyTablesToDir(ctx context.Context, tfp tableFilePersister
 		if err == nil {
 			return []tableSpec{
 				{
-					name:       addr,
+					hash:       addr,
 					chunkCount: uint32(gcc.writer.ChunkCount()),
 				},
 			}, nil
@@ -121,7 +121,7 @@ func (gcc *gcCopier) copyTablesToDir(ctx context.Context, tfp tableFilePersister
 
 	return []tableSpec{
 		{
-			name:       addr,
+			hash:       addr,
 			chunkCount: uint32(gcc.writer.ChunkCount()),
 		},
 	}, nil

@@ -68,7 +68,6 @@ const (
 	defaultMaxTables           = 256
 
 	defaultManifestCacheSize = 1 << 23 // 8MB
-	preflushChunkCount       = 8
 )
 
 var (
@@ -127,8 +126,10 @@ var _ chunks.ChunkStoreGarbageCollector = &NomsBlockStore{}
 const hasCacheSize = 100000
 
 type Range struct {
-	Offset uint64
-	Length uint32
+	Offset     uint64
+	Length     uint32
+	DictOffset uint64
+	DictLength uint32
 }
 
 // ChunkJournal returns the ChunkJournal in use by this NomsBlockStore, or nil if no ChunkJournal is being used.
@@ -144,16 +145,16 @@ func (nbs *NomsBlockStore) GetChunkLocationsWithPaths(ctx context.Context, hashe
 	if err != nil {
 		return nil, err
 	}
-	toret := make(map[string]map[hash.Hash]Range, len(locs))
+	toret := make(map[string]map[hash.Hash]Range, len(locs)) // NM4
 	for k, v := range locs {
-		toret[k.String()] = v
+		toret[k] = v
 	}
 	return toret, nil
 }
 
-func (nbs *NomsBlockStore) GetChunkLocations(ctx context.Context, hashes hash.HashSet) (map[hash.Hash]map[hash.Hash]Range, error) {
+func (nbs *NomsBlockStore) GetChunkLocations(ctx context.Context, hashes hash.HashSet) (map[string]map[hash.Hash]Range, error) {
 	gr := toGetRecords(hashes)
-	ranges := make(map[hash.Hash]map[hash.Hash]Range)
+	ranges := make(map[string]map[hash.Hash]Range)
 
 	fn := func(css chunkSourceSet) error {
 		for _, cs := range css {
@@ -161,8 +162,11 @@ func (nbs *NomsBlockStore) GetChunkLocations(ctx context.Context, hashes hash.Ha
 			if err != nil {
 				return err
 			}
+			if len(rng) == 0 {
+				continue // NM4 - not sure why this wasn't here before....
+			}
 
-			h := hash.Hash(cs.hash())
+			h := cs.name()
 			if m, ok := ranges[h]; ok {
 				for k, v := range rng {
 					m[k] = v
@@ -259,7 +263,7 @@ func (nbs *NomsBlockStore) UpdateManifest(ctx context.Context, updates map[hash.
 		for h, count := range updates {
 			if _, ok := currSpecs[h]; !ok {
 				addCount++
-				contents.specs = append(contents.specs, tableSpec{h, count})
+				contents.specs = append(contents.specs, tableSpec{typeNoms, h, count})
 			}
 		}
 
@@ -348,11 +352,11 @@ func (nbs *NomsBlockStore) UpdateManifestWithAppendix(ctx context.Context, updat
 		var addCount int
 		for h, count := range updates {
 			if option == ManifestAppendixOption_Set {
-				appendixSpecs = append(appendixSpecs, tableSpec{h, count})
+				appendixSpecs = append(appendixSpecs, tableSpec{typeNoms, h, count}) // NM4 sanity check.
 			} else {
 				if _, ok := currAppendixSpecs[h]; !ok {
 					addCount++
-					appendixSpecs = append(appendixSpecs, tableSpec{h, count})
+					appendixSpecs = append(appendixSpecs, tableSpec{typeNoms, h, count}) // NM4 sanity check
 				}
 			}
 		}
@@ -473,12 +477,13 @@ func OverwriteStoreManifest(ctx context.Context, store *NomsBlockStore, root has
 	}
 	// Appendix table files should come first in specs
 	for h, c := range appendixTableFiles {
-		s := tableSpec{name: h, chunkCount: c}
+		// NM4 - not sure on this one....
+		s := tableSpec{fileType: typeNoms, hash: h, chunkCount: c}
 		contents.appendix = append(contents.appendix, s)
 		contents.specs = append(contents.specs, s)
 	}
 	for h, c := range tableFiles {
-		s := tableSpec{name: h, chunkCount: c}
+		s := tableSpec{fileType: typeNoms, hash: h, chunkCount: c}
 		contents.specs = append(contents.specs, s)
 	}
 	contents.lock = generateLockHash(contents.root, contents.specs, contents.appendix, nil)
@@ -1295,7 +1300,7 @@ func (nbs *NomsBlockStore) updateManifest(ctx context.Context, current, last has
 
 		filtered := make([]tableSpec, 0, len(specs))
 		for _, s := range specs {
-			if _, present := appendixSet[s.name]; !present {
+			if _, present := appendixSet[s.hash]; !present {
 				filtered = append(filtered, s)
 			}
 		}
@@ -1384,7 +1389,7 @@ func (tf tableFile) LocationPrefix() string {
 
 // FileID gets the id of the file
 func (tf tableFile) FileID() string {
-	return tf.info.GetName()
+	return tf.info.GetFileName()
 }
 
 // NumChunks returns the number of chunks in a table file
@@ -1440,12 +1445,21 @@ func getTableFiles(css map[hash.Hash]chunkSource, contents manifestContents, num
 	if numSpecs == 0 {
 		return tableFiles, nil
 	}
+
 	for i := 0; i < numSpecs; i++ {
+		// info := tableSpec{fileType: typeNoms, hash: hash.Hash{}, chunkCount: 0}
+
 		info := specFunc(contents, i)
-		cs, ok := css[info.name]
+		cs, ok := css[info.hash]
 		if !ok {
 			return nil, ErrSpecWithoutChunkSource
 		}
+
+		// Look a the type of cs, and set archive type is needed.
+		if _, ok := cs.(archiveChunkSource); ok {
+			info.fileType = typeArchive
+		}
+
 		tableFiles = append(tableFiles, newTableFile(cs, info))
 	}
 	return tableFiles, nil
@@ -1781,7 +1795,7 @@ func (gcf gcFinalizer) AddChunksToStore(ctx context.Context) (chunks.HasManyFunc
 	fileIdToNumChunks := tableSpecsToMap(gcf.specs)
 	var addrs []hash.Hash
 	for _, spec := range gcf.specs {
-		addrs = append(addrs, spec.name)
+		addrs = append(addrs, spec.hash)
 	}
 	f := func(ctx context.Context, hashes hash.HashSet) (hash.HashSet, error) {
 		return gcf.nbs.hasManyInSources(addrs, hashes)
