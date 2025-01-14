@@ -87,6 +87,15 @@ func (g GhostBlockStore) GetMany(ctx context.Context, hashes hash.HashSet, found
 	return nil
 }
 
+func (g GhostBlockStore) GetManyCompressed(ctx context.Context, hashes hash.HashSet, found func(context.Context, CompressedChunk), gcReadMode GCReadMode) error {
+	for h := range hashes {
+		if g.skippedRefs.Has(h) {
+			found(ctx, NewGhostCompressedChunk(h))
+		}
+	}
+	return nil
+}
+
 func (g *GhostBlockStore) PersistGhostHashes(ctx context.Context, hashes hash.HashSet) error {
 	if hashes.Size() == 0 {
 		return fmt.Errorf("runtime error. PersistGhostHashes called with empty hash set")

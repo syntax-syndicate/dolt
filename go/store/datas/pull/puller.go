@@ -343,6 +343,9 @@ func (p *Puller) Pull(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			if cChk.IsGhost() {
+				return nbs.ErrGhostChunkRequested
+			}
 			if len(cChk.FullCompressedChunk) == 0 {
 				return errors.New("failed to get all chunks.")
 			}

@@ -360,7 +360,59 @@ func (mgcf msvGcFinalizer) SwapChunksInStore(ctx context.Context) error {
 	return nil
 }
 
-func (ms *MemoryStoreView) MarkAndSweepChunks(ctx context.Context, hashes <-chan []hash.Hash, dest ChunkStore, mode GCMode) (GCFinalizer, error) {
+type msvMarkAndSweeper struct {
+	ms *MemoryStoreView
+
+	getAddrs GetAddrsCurry
+	filter   HasManyFunc
+
+	keepers map[hash.Hash]Chunk
+}
+
+func (i *msvMarkAndSweeper) SaveHashes(ctx context.Context, hashes []hash.Hash) error {
+	filtered := hash.NewHashSet(hashes...)
+	for h := range i.keepers {
+		delete(filtered, h)
+	}
+	var err error
+	filtered, err = i.filter(ctx, filtered)
+	if err != nil {
+		return err
+	}
+
+	for {
+		newAddrs := make(hash.HashSet)
+		for h := range filtered {
+			c, err := i.ms.Get(ctx, h)
+			if err != nil {
+				return err
+			}
+			i.keepers[h] = c
+			err = i.getAddrs(c)(ctx, newAddrs, NoopPendingRefExists)
+			if err != nil {
+				return err
+			}
+		}
+		for h := range i.keepers {
+			delete(newAddrs, h)
+		}
+		filtered, err = i.filter(ctx, newAddrs)
+		if err != nil {
+			return err
+		}
+		if len(filtered) == 0 {
+			break
+		}
+	}
+
+	return nil
+}
+
+func (i *msvMarkAndSweeper) Close(context.Context) (GCFinalizer, error) {
+	return msvGcFinalizer{i.ms, i.keepers}, nil
+}
+
+func (ms *MemoryStoreView) MarkAndSweepChunks(ctx context.Context, getAddrs GetAddrsCurry, filter HasManyFunc, dest ChunkStore, mode GCMode) (MarkAndSweeper, error) {
 	if dest != ms {
 		panic("unsupported")
 	}
@@ -371,28 +423,12 @@ func (ms *MemoryStoreView) MarkAndSweepChunks(ctx context.Context, hashes <-chan
 	}
 	ms.mu.Unlock()
 
-	keepers := make(map[hash.Hash]Chunk, ms.storage.Len())
-
-LOOP:
-	for {
-		select {
-		case hs, ok := <-hashes:
-			if !ok {
-				break LOOP
-			}
-			for _, h := range hs {
-				c, err := ms.Get(ctx, h)
-				if err != nil {
-					return nil, err
-				}
-				keepers[h] = c
-			}
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-
-	return msvGcFinalizer{ms, keepers}, nil
+	return &msvMarkAndSweeper{
+		ms:       ms,
+		getAddrs: getAddrs,
+		filter:   filter,
+		keepers:  make(map[hash.Hash]Chunk),
+	}, nil
 }
 
 func (ms *MemoryStoreView) Count() (uint32, error) {

@@ -212,17 +212,16 @@ type ChunkStoreGarbageCollector interface {
 	// addChunk function must not be called after this function.
 	EndGC()
 
-	// MarkAndSweepChunks is expected to read chunk addresses off of
-	// |hashes|, which represent chunks which should be copied into the
-	// provided |dest| store.  Once |hashes| is closed,
-	// MarkAndSweepChunks is expected to update the contents of the store
-	// to only include the chunk whose addresses which were sent along on
-	// |hashes|.
-	//
-	// This behavior is a little different for ValueStore.GC()'s
-	// interactions with generational stores. See ValueStore and
-	// NomsBlockStore/GenerationalNBS for details.
-	MarkAndSweepChunks(ctx context.Context, hashes <-chan []hash.Hash, dest ChunkStore, mode GCMode) (GCFinalizer, error)
+	// MarkAndSweepChunks returns a handle that can be used to supply
+	// hashes which should be saved into |dest|. The hashes are
+	// filtered through the |filter| and their references are walked with
+	// |getAddrs|, each of those addresses being filtered and copied as
+	// well. |SaveHashes| returns when the transitive closure of all hashes
+	// in the supplied slice are copied. |SaveHashes| can be called
+	// multiple times. When |Close| is called, the |GCFinalizer| can be
+	// used to control what happens to set of chunks which have been
+	// copied.
+	MarkAndSweepChunks(ctx context.Context, getAddrs GetAddrsCurry, filter HasManyFunc, dest ChunkStore, mode GCMode) (MarkAndSweeper, error)
 
 	// Count returns the number of chunks in the store.
 	Count() (uint32, error)
@@ -230,6 +229,11 @@ type ChunkStoreGarbageCollector interface {
 	// IterateAllChunks iterates over all chunks in the store, calling the provided callback for each chunk. This is
 	// a wrapper over the internal chunkSource.iterateAllChunks() method.
 	IterateAllChunks(context.Context, func(chunk Chunk)) error
+}
+
+type MarkAndSweeper interface {
+	SaveHashes(context.Context, []hash.Hash) error
+	Close(context.Context) (GCFinalizer, error)
 }
 
 type PrefixChunkStore interface {

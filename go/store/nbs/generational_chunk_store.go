@@ -151,7 +151,6 @@ func (gcs *GenerationalNBS) GetManyCompressed(ctx context.Context, hashes hash.H
 			defer mu.Unlock()
 			delete(notInOldGen, chunk.Hash())
 		}()
-
 		found(ctx, chunk)
 	}, gcReadMode)
 
@@ -180,24 +179,14 @@ func (gcs *GenerationalNBS) GetManyCompressed(ctx context.Context, hashes hash.H
 		return nil
 	}
 
-	// We are definitely missing some chunks. Check if any are ghost chunks, mainly to give a better error message.
+	// We are definitely missing some chunks. Check if any are ghost chunks.
 	if gcs.ghostGen != nil {
-		// If any of the hashes are in the ghost store.
-		ghostFound := false
-		err := gcs.ghostGen.GetMany(ctx, hashes, func(ctx context.Context, chunk *chunks.Chunk) {
-			// This should be true for all chunks in the ghost store.
-			if chunk.IsGhost() {
-				ghostFound = true
-			}
-		})
-
+		err = gcs.ghostGen.GetManyCompressed(ctx, notFound, found, gcReadMode)
 		if err != nil {
 			return err
 		}
-		if ghostFound {
-			return ErrGhostChunkRequested
-		}
 	}
+
 	return nil
 }
 
@@ -503,8 +492,8 @@ func (gcs *GenerationalNBS) EndGC() {
 	gcs.newGen.EndGC()
 }
 
-func (gcs *GenerationalNBS) MarkAndSweepChunks(ctx context.Context, hashes <-chan []hash.Hash, dest chunks.ChunkStore, mode chunks.GCMode) (chunks.GCFinalizer, error) {
-	return markAndSweepChunks(ctx, hashes, gcs.newGen, gcs, dest, mode)
+func (gcs *GenerationalNBS) MarkAndSweepChunks(ctx context.Context, getAddrs chunks.GetAddrsCurry, filter chunks.HasManyFunc, dest chunks.ChunkStore, mode chunks.GCMode) (chunks.MarkAndSweeper, error) {
+	return markAndSweepChunks(ctx, gcs.newGen, gcs, dest, getAddrs, filter, mode)
 }
 
 func (gcs *GenerationalNBS) IterateAllChunks(ctx context.Context, cb func(chunk chunks.Chunk)) error {

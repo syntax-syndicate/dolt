@@ -25,10 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dolthub/dolt/go/store/chunks"
 	"github.com/dolthub/dolt/go/store/d"
@@ -733,124 +730,26 @@ func (lvs *ValueStore) gc(ctx context.Context,
 	src, dest chunks.ChunkStoreGarbageCollector,
 	safepointF chunks.GCSafepointFunc,
 	finalize func() hash.HashSet) (chunks.GCFinalizer, error) {
-	keepChunks := make(chan []hash.Hash, gcBuffSize)
 
-	var gcFinalizer chunks.GCFinalizer
-
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		var err error
-		gcFinalizer, err = src.MarkAndSweepChunks(ctx, keepChunks, dest, chksMode)
-		return err
-	})
-
-	keepHashes := func(hs []hash.Hash) error {
-		select {
-		case keepChunks <- hs:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	// TODO: Parallel ref walker...
+	ms, err := src.MarkAndSweepChunks(ctx, lvs.getAddrs, hashFilter, dest, chksMode)
+	if err != nil {
+		return nil, err
 	}
 
-	concurrency := runtime.GOMAXPROCS(0) - 1
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	walker := newParallelRefWalker(ctx, lvs.nbf, concurrency)
-
-	eg.Go(func() error {
-		defer walker.Close()
-
-		err := lvs.gcProcessRefs(ctx, toVisit, keepHashes, walker, hashFilter, safepointF, finalize)
-		if err != nil {
-			return err
-		}
-
-		// NOTE: We do not defer this close here. When keepChunks
-		// closes, it signals to NBSStore.MarkAndSweepChunks that we
-		// are done walking the references. If gcProcessRefs returns an
-		// error, we did not successfully walk all references and we do
-		// not want MarkAndSweepChunks finishing its work, swapping
-		// table files, etc. It would be racing with returning an error
-		// here. Instead, we have returned the error above and that
-		// will force it to fail when the errgroup ctx fails.
-		close(keepChunks)
-		return nil
-	})
-
-	err := eg.Wait()
-	return gcFinalizer, err
+	return lvs.gcProcessRefs(ctx, toVisit, ms, safepointF, finalize)
 }
 
 func (lvs *ValueStore) gcProcessRefs(ctx context.Context,
-	initialToVisit hash.HashSet, keepHashes func(hs []hash.Hash) error,
-	walker *parallelRefWalker, hashFilter chunks.HasManyFunc,
+	initialToVisit hash.HashSet,
+	ms chunks.MarkAndSweeper,
 	safepointF chunks.GCSafepointFunc,
-	finalize func() hash.HashSet) error {
-	visited := make(hash.HashSet)
-
-	process := func(initialToVisit hash.HashSet) error {
-		visited.InsertAll(initialToVisit)
-		toVisitCount := len(initialToVisit)
-		toVisit := []hash.HashSet{initialToVisit}
-		for toVisitCount > 0 {
-			batches := makeBatches(toVisit, toVisitCount)
-			toVisit = make([]hash.HashSet, len(batches)+1)
-			toVisitCount = 0
-			for i, batch := range batches {
-				vals, err := lvs.ReadManyValues(ctx, batch)
-				if err != nil {
-					return err
-				}
-				for i, v := range vals {
-					if v == nil {
-						return fmt.Errorf("gc failed, dangling reference requested %v", batch[i])
-					}
-				}
-
-				// GC skips ghost values, but other ref walkers don't. Filter them out here.
-				realVals := make(ValueSlice, 0, len(vals))
-				nonGhostBatch := make([]hash.Hash, 0, len(vals))
-				for _, v := range vals {
-					h, err := v.Hash(lvs.Format())
-					if err != nil {
-						return err
-					}
-					if _, ok := v.(GhostValue); ok {
-						visited.Insert(h) // Can't visit a ghost. That would be spooky.
-					} else {
-						realVals = append(realVals, v)
-						nonGhostBatch = append(nonGhostBatch, h)
-					}
-				}
-				vals = realVals
-
-				if err := keepHashes(nonGhostBatch); err != nil {
-					return err
-				}
-
-				hashes, err := walker.GetRefSet(visited, vals)
-				if err != nil {
-					return err
-				}
-
-				// continue processing
-				hashes, err = hashFilter(ctx, hashes)
-				if err != nil {
-					return err
-				}
-
-				toVisit[i] = hashes
-				toVisitCount += len(hashes)
-			}
-		}
-		return nil
-	}
-	err := process(initialToVisit)
+	finalize func() hash.HashSet) (chunks.GCFinalizer, error) {
+	err := ms.SaveHashes(ctx, initialToVisit.ToSlice())
 	if err != nil {
-		return err
+		return nil, err
 	}
+	initialToVisit = nil
 
 	// We can accumulate hashes which which are already visited. We prune
 	// those here.
@@ -859,22 +758,11 @@ func (lvs *ValueStore) gcProcessRefs(ctx context.Context,
 	// NewGenToVisit. NewGen -> Finalize is going to block writes until
 	// we are done, so its best to keep it as small as possible.
 	next := lvs.readAndResetNewGenToVisit()
-	if len(next) > 0 {
-		nextCopy := next.Copy()
-		for h, _ := range nextCopy {
-			if visited.Has(h) {
-				next.Remove(h)
-			}
-		}
-		next, err = hashFilter(ctx, next)
-		if err != nil {
-			return err
-		}
-		err = process(next)
-		if err != nil {
-			return err
-		}
+	err = ms.SaveHashes(ctx, next.ToSlice())
+	if err != nil {
+		return nil, err
 	}
+	next = nil
 
 	keeper := func(hs hash.HashSet) {
 		for h := range hs {
@@ -886,37 +774,28 @@ func (lvs *ValueStore) gcProcessRefs(ctx context.Context,
 	if safepointF != nil {
 		finalSafepointF, err = safepointF(keeper)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	final := finalize()
-	finalCopy := final.Copy()
-	for h, _ := range finalCopy {
-		if visited.Has(h) {
-			final.Remove(h)
-		}
-	}
-	finalCopy = nil
-	final, err = hashFilter(ctx, final)
+	err = ms.SaveHashes(ctx, final.ToSlice())
 	if err != nil {
 		if finalSafepointF != nil {
 			finalSafepointErr = finalSafepointF()
 		}
-		return errors.Join(err, finalSafepointErr)
+		return nil, errors.Join(err, finalSafepointErr)
 	}
-	err = process(final)
-	if err != nil {
-		if finalSafepointF != nil {
-			finalSafepointErr = finalSafepointF()
-		}
-		return errors.Join(err, finalSafepointErr)
-	}
+	final = nil
 
 	if finalSafepointF != nil {
-		return finalSafepointF()
+		err = finalSafepointF()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return nil
+
+	return ms.Close(ctx)
 }
 
 // Close closes the underlying ChunkStore

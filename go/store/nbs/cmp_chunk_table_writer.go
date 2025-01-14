@@ -18,6 +18,7 @@ import (
 	"crypto/sha512"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	gohash "hash"
 	"io"
 	"os"
@@ -76,6 +77,10 @@ func (tw *CmpChunkTableWriter) GetMD5() []byte {
 
 // AddCmpChunk adds a compressed chunk
 func (tw *CmpChunkTableWriter) AddCmpChunk(c CompressedChunk) error {
+	if c.IsGhost() {
+		return fmt.Errorf("Cannot write ghost chunk through CmpChunkTableWriter: %w", ErrGhostChunkRequested)
+	}
+
 	if len(c.CompressedData) == 0 {
 		panic("NBS blocks cannot be zero length")
 	}
