@@ -502,17 +502,19 @@ func (si *schemaImpl) getKeyColumnsDescriptor(convertAddressColumns bool) val.Tu
 			contentHashedField = true
 		}
 
-		if convertAddressColumns && !contentHashedField && queryType == query.Type_BLOB {
+		_, isExtendedType := sqlType.(gmstypes.ExtendedType)
+
+		if !isExtendedType && convertAddressColumns && !contentHashedField && queryType == query.Type_BLOB {
 			t = val.Type{
 				Enc:      val.Encoding(EncodingFromQueryType(query.Type_VARBINARY)),
 				Nullable: columnMissingNotNullConstraint(col),
 			}
-		} else if convertAddressColumns && !contentHashedField && queryType == query.Type_TEXT {
+		} else if !isExtendedType && convertAddressColumns && !contentHashedField && queryType == query.Type_TEXT {
 			t = val.Type{
 				Enc:      val.Encoding(EncodingFromQueryType(query.Type_VARCHAR)),
 				Nullable: columnMissingNotNullConstraint(col),
 			}
-		} else if convertAddressColumns && !contentHashedField && queryType == query.Type_GEOMETRY {
+		} else if !isExtendedType && convertAddressColumns && !contentHashedField && queryType == query.Type_GEOMETRY {
 			t = val.Type{
 				Enc:      val.Encoding(serial.EncodingCell),
 				Nullable: columnMissingNotNullConstraint(col),
