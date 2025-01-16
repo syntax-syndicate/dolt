@@ -20,13 +20,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/fatih/color"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/dolthub/dolt/go/libraries/doltcore/doltdb"
 	"github.com/dolthub/dolt/go/libraries/doltcore/env"
 	"github.com/dolthub/dolt/go/libraries/doltcore/ref"
 	"github.com/dolthub/dolt/go/store/datas"
+	"github.com/fatih/color"
 )
 
 type TagProps struct {
@@ -109,40 +107,53 @@ func IterResolvedTags(ctx context.Context, ddb *doltdb.DoltDB, cb func(tag *dolt
 		return err
 	}
 
-	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(128)
+	//eg, egCtx := errgroup.WithContext(ctx)
+	//eg.SetLimit(128)
 
 	startResolveTags := time.Now()
 	resolved := make([]*doltdb.Tag, len(tagRefs))
 	for idx, r := range tagRefs {
-		idx, r := idx, r
-		eg.Go(func() error {
-			if egCtx.Err() != nil {
-				return egCtx.Err()
-			}
+		tr, ok := r.(ref.TagRef)
+		if !ok {
+			return fmt.Errorf("DoltDB.GetTags() returned non-tag DoltRef")
+		}
 
-			tr, ok := r.(ref.TagRef)
-			if !ok {
-				return fmt.Errorf("DoltDB.GetTags() returned non-tag DoltRef")
-			}
+		//startResolveTag := time.Now()
+		tag, err := ddb.ResolveTag(ctx, tr)
+		if err != nil {
+			//fmt.Fprintf(color.Output, "DUSTIN: IterResolvedTags: resolve tag: error: %s: elapsed: %v\n", err.Error(), time.Since(startResolveTag))
+			return err
+		}
 
-			//startResolveTag := time.Now()
-			tag, err := ddb.ResolveTag(egCtx, tr)
-			if err != nil {
-				//fmt.Fprintf(color.Output, "DUSTIN: IterResolvedTags: resolve tag: error: %s: elapsed: %v\n", err.Error(), time.Since(startResolveTag))
-				return err
-			}
-
-			resolved[idx] = tag
-			//fmt.Fprintf(color.Output, "DUSTIN: IterResolvedTags: resolve tag: success: ref: %s elapsed: %v\n", r.String(), time.Since(startResolveTag))
-			return nil
-		})
+		resolved[idx] = tag
+		//idx, r := idx, r
+		//eg.Go(func() error {
+		//	if egCtx.Err() != nil {
+		//		return egCtx.Err()
+		//	}
+		//
+		//	tr, ok := r.(ref.TagRef)
+		//	if !ok {
+		//		return fmt.Errorf("DoltDB.GetTags() returned non-tag DoltRef")
+		//	}
+		//
+		//	//startResolveTag := time.Now()
+		//	tag, err := ddb.ResolveTag(egCtx, tr)
+		//	if err != nil {
+		//		//fmt.Fprintf(color.Output, "DUSTIN: IterResolvedTags: resolve tag: error: %s: elapsed: %v\n", err.Error(), time.Since(startResolveTag))
+		//		return err
+		//	}
+		//
+		//	resolved[idx] = tag
+		//	//fmt.Fprintf(color.Output, "DUSTIN: IterResolvedTags: resolve tag: success: ref: %s elapsed: %v\n", r.String(), time.Since(startResolveTag))
+		//	return nil
+		//})
 	}
 
-	err = eg.Wait()
-	if err != nil {
-		return err
-	}
+	//err = eg.Wait()
+	//if err != nil {
+	//	return err
+	//}
 
 	fmt.Fprintf(color.Output, "DUSTIN: IterResolvedTags: resolve all tags: success: elapsed: %v\n", time.Since(startResolveTags))
 
