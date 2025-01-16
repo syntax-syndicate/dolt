@@ -110,7 +110,7 @@ func IterResolvedTags(ctx context.Context, ddb *doltdb.DoltDB, cb func(tag *dolt
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(128)
+	eg.SetLimit(8)
 
 	startResolveTags := time.Now()
 	resolved := make([]*doltdb.Tag, len(tagRefs))
