@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/cespare/xxhash/v2"
 	flatbuffers "github.com/dolthub/flatbuffers/v23/go"
@@ -115,6 +116,9 @@ type RootValue interface {
 	TableListHash() uint64
 	// VRW returns this root's ValueReadWriter.
 	VRW() types.ValueReadWriter
+
+	Lock()
+	Unlock()
 }
 
 // rootValue is Dolt's implementation of RootValue.
@@ -128,6 +132,8 @@ type rootValue struct {
 	tablesHash uint64
 	// schemaHashes keeps a list of table schema hashes
 	schemaHashes map[TableName]hash.Hash
+
+	lock sync.RWMutex
 }
 
 var _ RootValue = (*rootValue)(nil)
@@ -171,7 +177,13 @@ var NewRootValue = func(ctx context.Context, vrw types.ValueReadWriter, ns tree.
 		}
 	}
 
-	return &rootValue{vrw, ns, storage, nil, hash.Hash{}, 0, nil}, nil
+	return &rootValue{
+		vrw:      vrw,
+		ns:       ns,
+		st:       storage,
+		rootHash: hash.Hash{},
+		lock:     sync.RWMutex{},
+	}, nil
 }
 
 // EmptyRootValue returns an empty RootValue. This is a variable as it's changed in Doltgres.
@@ -326,6 +338,14 @@ func (root *rootValue) HasTable(ctx context.Context, tName TableName) (bool, err
 		return false, err
 	}
 	return !a.IsEmpty(), nil
+}
+
+func (root *rootValue) Lock() {
+	root.lock.Lock()
+}
+
+func (root *rootValue) Unlock() {
+	root.lock.Unlock()
 }
 
 // GenerateTagsForNewColColl creates a new ColCollection for the specified |tableName|. Note that this function is only
@@ -735,7 +755,13 @@ func (root *rootValue) IterTables(ctx context.Context, cb func(name TableName, t
 }
 
 func (root *rootValue) withStorage(st rootValueStorage) *rootValue {
-	return &rootValue{root.vrw, root.ns, st, nil, hash.Hash{}, 0, nil}
+	return &rootValue{
+		vrw:      root.vrw,
+		ns:       root.ns,
+		st:       st,
+		rootHash: hash.Hash{},
+		lock:     sync.RWMutex{},
+	}
 }
 
 func (root *rootValue) NomsValue() types.Value {
