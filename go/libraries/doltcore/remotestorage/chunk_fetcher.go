@@ -261,6 +261,7 @@ func fetcherRPCDownloadLocsThread(ctx context.Context, reqCh chan *remotesapi.Ge
 	})
 	eg.Go(func() error {
 		for {
+			// NM4 - Where there responses come back - resp is an rpc struct. NM4.
 			resp, err := stream.Recv()
 			if err == io.EOF {
 				close(resCh)
@@ -306,6 +307,7 @@ func getMissingChunks(req *remotesapi.GetDownloadLocsRequest, resp *remotesapi.G
 	numRequested := len(req.ChunkHashes)
 	numResponded := 0
 	for _, loc := range resp.Locs {
+		// NM4 - Looky here.
 		hgr := loc.Location.(*remotesapi.DownloadLoc_HttpGetRange).HttpGetRange
 		numResponded += len(hgr.Ranges)
 	}
@@ -368,6 +370,7 @@ func (d downloads) Add(resp *remotesapi.DownloadLoc) {
 		d.refreshes[path] = refresh
 	}
 	for _, r := range gr.Ranges {
+		// NM4 - this is where the offset is read!! do something here or nearby.
 		d.ranges.Insert(gr.Url, r.Hash, r.Offset, r.Length)
 	}
 }
